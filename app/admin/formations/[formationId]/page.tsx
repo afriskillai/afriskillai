@@ -5,6 +5,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import AdminShell from "@/components/admin/AdminShell";
+import DeleteFormationButton from "@/components/admin/formations/DeleteFormationButton";
 import { getAdminSession } from "@/lib/admin-session";
 import { db } from "@/lib/db";
 
@@ -367,6 +368,11 @@ function FormationDetailView({
                 <EditIcon />
                 Modifier
               </Link>
+
+              <DeleteFormationButton
+                formationId={formation.id}
+                formationTitle={formation.title}
+              />
             </div>
           </div>
         </div>

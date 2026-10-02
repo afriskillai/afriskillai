@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+
 import { Prisma } from "@/generated/prisma/client";
 import { CourseStatus } from "@/generated/prisma/enums";
+
 import { getAdminSession } from "@/lib/admin-session";
 import { db } from "@/lib/db";
 
@@ -9,10 +11,13 @@ export const dynamic = "force-dynamic";
 
 const MIN_TITLE_LENGTH = 3;
 const MAX_TITLE_LENGTH = 150;
+
 const MIN_SHORT_DESCRIPTION_LENGTH = 10;
 const MAX_SHORT_DESCRIPTION_LENGTH = 300;
+
 const MIN_DESCRIPTION_LENGTH = 30;
 const MAX_DESCRIPTION_LENGTH = 50_000;
+
 const MAX_PRIVATE_ACCESS_URL_LENGTH = 2048;
 
 const MAX_RICH_DOCUMENT_DEPTH = 20;
@@ -83,6 +88,10 @@ type ValidationResult =
       message: string;
     };
 
+/* =========================================================
+   GET
+   ========================================================= */
+
 export async function GET(
   _request: Request,
   context: RouteContext,
@@ -121,12 +130,14 @@ export async function GET(
       where: {
         id,
       },
+
       include: {
         images: {
           orderBy: {
             position: "asc",
           },
         },
+
         descriptionImages: {
           orderBy: {
             position: "asc",
@@ -170,6 +181,10 @@ export async function GET(
   }
 }
 
+/* =========================================================
+   PUT
+   ========================================================= */
+
 export async function PUT(
   request: Request,
   context: RouteContext,
@@ -209,6 +224,7 @@ export async function PUT(
         where: {
           id,
         },
+
         select: {
           id: true,
           status: true,
@@ -270,6 +286,7 @@ export async function PUT(
       where: {
         id,
       },
+
       data: {
         ...(data.title !== undefined
           ? {
@@ -345,12 +362,14 @@ export async function PUT(
             }
           : {}),
       },
+
       include: {
         images: {
           orderBy: {
             position: "asc",
           },
         },
+
         descriptionImages: {
           orderBy: {
             position: "asc",
@@ -361,10 +380,12 @@ export async function PUT(
 
     return NextResponse.json({
       success: true,
+
       message:
         formation.status === CourseStatus.PUBLISHED
           ? "Formation enregistrée et publiée avec succès."
           : "Formation enregistrée avec succès.",
+
       formation,
     });
   } catch (error) {
@@ -386,6 +407,33 @@ export async function PUT(
   }
 }
 
+/* =========================================================
+   DELETE
+   ========================================================= */
+
+/**
+ * Suppression sécurisée d'une formation.
+ *
+ * Règles :
+ *
+ * 1. Une formation qui n'a jamais été réellement achetée
+ *    peut être supprimée définitivement.
+ *
+ * 2. Les OrderItem appartenant à des commandes NON PAYÉES
+ *    ne doivent pas empêcher la suppression d'une formation
+ *    de test.
+ *
+ * 3. Les commandes et paiements ne sont jamais supprimés ici.
+ *
+ * 4. Une formation liée à une commande PAYÉE, un accès client
+ *    ou toute autre donnée métier protégée n'est jamais détruite.
+ *
+ * 5. Si une contrainte métier protégée subsiste, la formation
+ *    est archivée et retirée de la vente.
+ *
+ * Cette stratégie permet donc de supprimer les formations de test
+ * sans détruire l'historique financier réel de la plateforme.
+ */
 export async function DELETE(
   _request: Request,
   context: RouteContext,
@@ -424,9 +472,25 @@ export async function DELETE(
       where: {
         id,
       },
+
       select: {
         id: true,
         title: true,
+        status: true,
+
+        orderItems: {
+          select: {
+            id: true,
+            orderId: true,
+
+            order: {
+              select: {
+                id: true,
+                status: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -442,21 +506,259 @@ export async function DELETE(
       );
     }
 
-    await db.course.delete({
-      where: {
-        id,
+    /*
+     * ---------------------------------------------------------
+     * PROTECTION DE L'HISTORIQUE PAYÉ
+     * ---------------------------------------------------------
+     *
+     * Si au moins une ligne de commande de cette formation
+     * appartient à une commande réellement payée, la formation
+     * ne doit jamais être supprimée physiquement.
+     */
+    const hasPaidOrder = formation.orderItems.some(
+      (item) => item.order.status === "PAID",
+    );
+
+    if (hasPaidOrder) {
+      const archivedFormation = await db.course.update({
+        where: {
+          id,
+        },
+
+        data: {
+          status: CourseStatus.ARCHIVED,
+          publishedAt: null,
+        },
+
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          publishedAt: true,
+          updatedAt: true,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        action: "ARCHIVED",
+        deleted: false,
+        archived: true,
+
+        message:
+          "Cette formation possède un historique de commande payée. Elle a été retirée de la vente et archivée afin de conserver les données financières et les accès clients.",
+
+        formation: archivedFormation,
+      });
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * SUPPRESSION DES RÉFÉRENCES DE TEST / NON PAYÉES
+     * ---------------------------------------------------------
+     *
+     * On ne supprime PAS :
+     *
+     * - les commandes ;
+     * - les paiements ;
+     * - les utilisateurs.
+     *
+     * On détache uniquement cette formation des commandes qui
+     * n'ont jamais été payées.
+     *
+     * Cela règle notamment :
+     *
+     * OrderItem_courseId_fkey
+     *
+     * qui empêchait la suppression de "formation 456".
+     */
+    await db.$transaction(
+      async (tx) => {
+        await tx.orderItem.deleteMany({
+          where: {
+            courseId: id,
+
+            order: {
+              status: {
+                not: "PAID",
+              },
+            },
+          },
+        });
+
+        /*
+         * -----------------------------------------------------
+         * TENTATIVE DE SUPPRESSION RÉELLE
+         * -----------------------------------------------------
+         *
+         * Les relations configurées en cascade seront nettoyées
+         * automatiquement par PostgreSQL.
+         *
+         * Si une relation protégée subsiste, Prisma déclenchera
+         * P2003. Elle sera gérée juste après la transaction.
+         */
+        await tx.course.delete({
+          where: {
+            id,
+          },
+        });
       },
-    });
+      {
+        isolationLevel:
+          Prisma.TransactionIsolationLevel.Serializable,
+      },
+    );
 
     return NextResponse.json({
       success: true,
-      message: "Formation supprimée avec succès.",
+      action: "DELETED",
+      deleted: true,
+      archived: false,
+
+      message:
+        "Formation supprimée définitivement avec succès.",
+
       formation: {
         id: formation.id,
         title: formation.title,
       },
     });
   } catch (error) {
+    /*
+     * ---------------------------------------------------------
+     * FORMATION DÉJÀ SUPPRIMÉE
+     * ---------------------------------------------------------
+     *
+     * Rend la suppression plus robuste lorsqu'une deuxième
+     * requête DELETE arrive après une suppression réussie.
+     */
+    if (
+      error instanceof
+        Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      return NextResponse.json({
+        success: true,
+        action: "DELETED",
+        deleted: true,
+        archived: false,
+
+        message:
+          "La formation est déjà supprimée.",
+      });
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * CONTRAINTE MÉTIER PROTÉGÉE
+     * ---------------------------------------------------------
+     *
+     * Une relation existe encore :
+     *
+     * - accès client ;
+     * - inscription ;
+     * - livraison ;
+     * - commande payée ;
+     * - ou autre historique protégé.
+     *
+     * Dans ce cas on ne force JAMAIS la suppression.
+     */
+    if (
+      error instanceof
+        Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2003"
+    ) {
+      try {
+        const { formationId } = await context.params;
+        const id = normalizeFormationId(formationId);
+
+        if (!id) {
+          return NextResponse.json(
+            {
+              success: false,
+              message:
+                "Identifiant de formation invalide.",
+            },
+            {
+              status: 400,
+            },
+          );
+        }
+
+        const existingFormation =
+          await db.course.findUnique({
+            where: {
+              id,
+            },
+
+            select: {
+              id: true,
+              title: true,
+            },
+          });
+
+        if (!existingFormation) {
+          return NextResponse.json({
+            success: true,
+            action: "DELETED",
+            deleted: true,
+            archived: false,
+
+            message:
+              "La formation est déjà supprimée.",
+          });
+        }
+
+        const archivedFormation =
+          await db.course.update({
+            where: {
+              id,
+            },
+
+            data: {
+              status: CourseStatus.ARCHIVED,
+              publishedAt: null,
+            },
+
+            select: {
+              id: true,
+              title: true,
+              status: true,
+              publishedAt: true,
+              updatedAt: true,
+            },
+          });
+
+        return NextResponse.json({
+          success: true,
+          action: "ARCHIVED",
+          deleted: false,
+          archived: true,
+
+          message:
+            "Cette formation possède encore un historique métier protégé. Elle a été retirée de la vente et archivée afin de conserver les commandes, paiements et accès clients.",
+
+          formation: archivedFormation,
+        });
+      } catch (archiveError) {
+        console.error(
+          "[ADMIN_FORMATION_DELETE_ARCHIVE]",
+          archiveError,
+        );
+
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "La formation ne peut pas être supprimée et son archivage a également échoué.",
+          },
+          {
+            status: 500,
+          },
+        );
+      }
+    }
+
     console.error(
       "[ADMIN_FORMATION_DELETE]",
       error,
@@ -475,17 +777,31 @@ export async function DELETE(
   }
 }
 
+/* =========================================================
+   VALIDATION DE LA MISE À JOUR
+   ========================================================= */
+
 function validateUpdateBody(
   body: UpdateFormationBody,
   currentStatus: CourseStatus,
   currentPublishedAt: Date | null,
 ): ValidationResult {
+  if (!isPlainObject(body)) {
+    return invalid(
+      "Les données de la formation sont invalides.",
+    );
+  }
+
   const data: Record<string, unknown> = {};
+
+  /* ---------------------------------------------------------
+     TITRE
+     --------------------------------------------------------- */
 
   if (body.title !== undefined) {
     if (typeof body.title !== "string") {
       return invalid(
-        "Le nom de la formation est invalide.",
+        "Le titre de la formation est invalide.",
       );
     }
 
@@ -493,26 +809,29 @@ function validateUpdateBody(
 
     if (title.length < MIN_TITLE_LENGTH) {
       return invalid(
-        `Le nom de la formation doit contenir au moins ${MIN_TITLE_LENGTH} caractères.`,
+        `Le titre doit contenir au moins ${MIN_TITLE_LENGTH} caractères.`,
       );
     }
 
     if (title.length > MAX_TITLE_LENGTH) {
       return invalid(
-        `Le nom de la formation ne doit pas dépasser ${MAX_TITLE_LENGTH} caractères.`,
+        `Le titre ne doit pas dépasser ${MAX_TITLE_LENGTH} caractères.`,
       );
     }
 
     data.title = title;
   }
 
+  /* ---------------------------------------------------------
+     DESCRIPTION COURTE
+     --------------------------------------------------------- */
+
   if (body.shortDescription !== undefined) {
     if (
-      typeof body.shortDescription !==
-      "string"
+      typeof body.shortDescription !== "string"
     ) {
       return invalid(
-        "La courte description est invalide.",
+        "La description courte est invalide.",
       );
     }
 
@@ -524,7 +843,7 @@ function validateUpdateBody(
       MIN_SHORT_DESCRIPTION_LENGTH
     ) {
       return invalid(
-        `La courte description doit contenir au moins ${MIN_SHORT_DESCRIPTION_LENGTH} caractères.`,
+        `La description courte doit contenir au moins ${MIN_SHORT_DESCRIPTION_LENGTH} caractères.`,
       );
     }
 
@@ -533,13 +852,17 @@ function validateUpdateBody(
       MAX_SHORT_DESCRIPTION_LENGTH
     ) {
       return invalid(
-        `La courte description ne doit pas dépasser ${MAX_SHORT_DESCRIPTION_LENGTH} caractères.`,
+        `La description courte ne doit pas dépasser ${MAX_SHORT_DESCRIPTION_LENGTH} caractères.`,
       );
     }
 
     data.shortDescription =
       shortDescription;
   }
+
+  /* ---------------------------------------------------------
+     DESCRIPTION TEXTE
+     --------------------------------------------------------- */
 
   if (body.description !== undefined) {
     if (
@@ -574,27 +897,37 @@ function validateUpdateBody(
     data.description = description;
   }
 
+  /* ---------------------------------------------------------
+     DESCRIPTION ENRICHIE TIPTAP
+     --------------------------------------------------------- */
+
   if (
     body.descriptionContent !== undefined
   ) {
-    if (body.descriptionContent === null) {
+    if (
+      body.descriptionContent === null
+    ) {
       data.descriptionContent = null;
     } else {
-      const richDocumentValidation =
+      const richValidation =
         validateRichDocument(
           body.descriptionContent,
         );
 
-      if (!richDocumentValidation.success) {
+      if (!richValidation.success) {
         return invalid(
-          richDocumentValidation.message,
+          richValidation.message,
         );
       }
 
       data.descriptionContent =
-        richDocumentValidation.value;
+        richValidation.value;
     }
   }
+
+  /* ---------------------------------------------------------
+     PRIX
+     --------------------------------------------------------- */
 
   if (body.price !== undefined) {
     const price = parseMoneyValue(
@@ -603,12 +936,16 @@ function validateUpdateBody(
 
     if (price === null) {
       return invalid(
-        "Le prix réel est invalide.",
+        "Le prix de la formation est invalide.",
       );
     }
 
     data.price = price;
   }
+
+  /* ---------------------------------------------------------
+     PRIX PROMOTIONNEL
+     --------------------------------------------------------- */
 
   if (
     body.promotionalPrice !== undefined
@@ -635,25 +972,33 @@ function validateUpdateBody(
     }
   }
 
-  const effectivePrice =
-    typeof data.price === "number"
-      ? data.price
-      : undefined;
-
-  const effectivePromotionalPrice =
-    data.promotionalPrice;
-
+  /*
+   * Validation croisée prix / promotion.
+   *
+   * Lorsqu'un seul des deux prix est modifié,
+   * on ne possède pas ici l'autre valeur complète.
+   * La validation principale est donc effectuée
+   * sur les valeurs effectivement reçues.
+   */
   if (
-    effectivePrice !== undefined &&
-    typeof effectivePromotionalPrice ===
-      "number" &&
-    effectivePromotionalPrice >=
-      effectivePrice
+    data.price !== undefined &&
+    data.promotionalPrice !== undefined &&
+    data.promotionalPrice !== null
   ) {
-    return invalid(
-      "Le prix promotionnel doit être inférieur au prix réel.",
-    );
+    const price = data.price as number;
+    const promotionalPrice =
+      data.promotionalPrice as number;
+
+    if (promotionalPrice >= price) {
+      return invalid(
+        "Le prix promotionnel doit être inférieur au prix normal.",
+      );
+    }
   }
+
+  /* ---------------------------------------------------------
+     DEVISE
+     --------------------------------------------------------- */
 
   if (body.currency !== undefined) {
     if (
@@ -664,38 +1009,41 @@ function validateUpdateBody(
       );
     }
 
-    const currency = body.currency
-      .trim()
-      .toUpperCase();
+    const currency =
+      body.currency
+        .trim()
+        .toUpperCase();
 
     if (
-      !["XOF", "EUR", "USD"].includes(
-        currency,
-      )
+      !/^[A-Z]{3}$/.test(currency)
     ) {
       return invalid(
-        "La devise sélectionnée n’est pas prise en charge.",
+        "La devise doit être un code ISO à 3 lettres.",
       );
     }
 
     data.currency = currency;
   }
 
-  if (body.status !== undefined) {
-    const parsedStatus =
-      parseCourseStatus(body.status);
+  /* ---------------------------------------------------------
+     STATUT
+     --------------------------------------------------------- */
 
-    if (!parsedStatus) {
+  if (body.status !== undefined) {
+    const status = parseCourseStatus(
+      body.status,
+    );
+
+    if (!status) {
       return invalid(
         "Le statut de la formation est invalide.",
       );
     }
 
-    data.status = parsedStatus;
+    data.status = status;
 
     if (
-      parsedStatus ===
-      CourseStatus.PUBLISHED
+      status === CourseStatus.PUBLISHED
     ) {
       data.publishedAt =
         currentStatus ===
@@ -707,6 +1055,10 @@ function validateUpdateBody(
       data.publishedAt = null;
     }
   }
+
+  /* ---------------------------------------------------------
+     LIEN PRIVÉ
+     --------------------------------------------------------- */
 
   if (
     body.privateAccessUrl !== undefined
@@ -767,6 +1119,10 @@ function validateUpdateBody(
   };
 }
 
+/* =========================================================
+   VALIDATION DOCUMENT TIPTAP
+   ========================================================= */
+
 function validateRichDocument(
   value: unknown,
 ):
@@ -794,9 +1150,7 @@ function validateRichDocument(
     };
   }
 
-  if (
-    !Array.isArray(value.content)
-  ) {
+  if (!Array.isArray(value.content)) {
     return {
       success: false,
       message:
@@ -824,6 +1178,10 @@ function validateRichDocument(
     value,
   };
 }
+
+/* =========================================================
+   VALIDATION NŒUD TIPTAP
+   ========================================================= */
 
 function validateRichNode(
   value: unknown,
@@ -882,6 +1240,10 @@ function validateRichNode(
     };
   }
 
+  /* ---------------------------------------------------------
+     TEXTE
+     --------------------------------------------------------- */
+
   if (node.type === "text") {
     if (typeof node.text !== "string") {
       return {
@@ -914,9 +1276,11 @@ function validateRichNode(
     };
   }
 
-  if (
-    node.type === "heading"
-  ) {
+  /* ---------------------------------------------------------
+     TITRE
+     --------------------------------------------------------- */
+
+  if (node.type === "heading") {
     if (!isPlainObject(node.attrs)) {
       return {
         success: false,
@@ -942,9 +1306,11 @@ function validateRichNode(
     }
   }
 
-  if (
-    node.type === "image"
-  ) {
+  /* ---------------------------------------------------------
+     IMAGE
+     --------------------------------------------------------- */
+
+  if (node.type === "image") {
     const imageValidation =
       validateImageNode(node.attrs);
 
@@ -952,6 +1318,10 @@ function validateRichNode(
       return imageValidation;
     }
   }
+
+  /* ---------------------------------------------------------
+     MARKS
+     --------------------------------------------------------- */
 
   if (node.marks !== undefined) {
     if (!Array.isArray(node.marks)) {
@@ -972,10 +1342,12 @@ function validateRichNode(
     }
   }
 
+  /* ---------------------------------------------------------
+     ENFANTS
+     --------------------------------------------------------- */
+
   if (node.content !== undefined) {
-    if (
-      !Array.isArray(node.content)
-    ) {
+    if (!Array.isArray(node.content)) {
       return {
         success: false,
         message:
@@ -983,9 +1355,7 @@ function validateRichNode(
       };
     }
 
-    for (
-      const child of node.content
-    ) {
+    for (const child of node.content) {
       const childValidation =
         validateRichNode(
           child,
@@ -1003,6 +1373,10 @@ function validateRichNode(
     success: true,
   };
 }
+
+/* =========================================================
+   VALIDATION MARK TIPTAP
+   ========================================================= */
 
 function validateRichMark(
   value: unknown,
@@ -1067,6 +1441,10 @@ function validateRichMark(
   };
 }
 
+/* =========================================================
+   VALIDATION IMAGE TIPTAP
+   ========================================================= */
+
 function validateImageNode(
   attrs: unknown,
 ):
@@ -1104,8 +1482,7 @@ function validateImageNode(
     attrs.imageId !== undefined &&
     attrs.imageId !== null &&
     (
-      typeof attrs.imageId !==
-        "string" ||
+      typeof attrs.imageId !== "string" ||
       attrs.imageId.trim().length === 0
     )
   ) {
@@ -1145,6 +1522,10 @@ function validateImageNode(
   };
 }
 
+/* =========================================================
+   STATUT
+   ========================================================= */
+
 function parseCourseStatus(
   value: unknown,
 ): CourseStatus | null {
@@ -1156,21 +1537,29 @@ function parseCourseStatus(
     value.trim().toUpperCase();
 
   if (
-    normalized ===
-    CourseStatus.DRAFT
+    normalized === CourseStatus.DRAFT
   ) {
     return CourseStatus.DRAFT;
   }
 
   if (
-    normalized ===
-    CourseStatus.PUBLISHED
+    normalized === CourseStatus.PUBLISHED
   ) {
     return CourseStatus.PUBLISHED;
   }
 
+  if (
+    normalized === CourseStatus.ARCHIVED
+  ) {
+    return CourseStatus.ARCHIVED;
+  }
+
   return null;
 }
+
+/* =========================================================
+   ARGENT
+   ========================================================= */
 
 function parseMoneyValue(
   value: unknown,
@@ -1202,6 +1591,10 @@ function parseMoneyValue(
   return parsed;
 }
 
+/* =========================================================
+   IDENTIFIANT FORMATION
+   ========================================================= */
+
 function normalizeFormationId(
   value: string,
 ) {
@@ -1217,6 +1610,10 @@ function normalizeFormationId(
 
   return normalized;
 }
+
+/* =========================================================
+   URL PRIVÉE
+   ========================================================= */
 
 function isAllowedPrivateUrl(
   value: string,
@@ -1243,6 +1640,10 @@ function isAllowedPrivateUrl(
   }
 }
 
+/* =========================================================
+   URL HTTPS
+   ========================================================= */
+
 function isHttpsUrl(
   value: string,
 ) {
@@ -1256,6 +1657,10 @@ function isHttpsUrl(
     return false;
   }
 }
+
+/* =========================================================
+   URL HTTP / HTTPS
+   ========================================================= */
 
 function isHttpUrl(
   value: string,
@@ -1272,6 +1677,10 @@ function isHttpUrl(
   }
 }
 
+/* =========================================================
+   OBJET SIMPLE
+   ========================================================= */
+
 function isPlainObject(
   value: unknown,
 ): value is Record<string, unknown> {
@@ -1281,6 +1690,10 @@ function isPlainObject(
     !Array.isArray(value)
   );
 }
+
+/* =========================================================
+   ERREUR DE VALIDATION
+   ========================================================= */
 
 function invalid(
   message: string,
