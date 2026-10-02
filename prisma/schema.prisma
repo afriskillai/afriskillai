@@ -1,0 +1,672 @@
+// ============================================================================
+// AFRISKILL AI — PRISMA SCHEMA
+// ============================================================================
+//
+// Prisma ORM : 7.10.x
+// Database   : PostgreSQL
+//
+// Principes :
+// - PostgreSQL conserve les données métier.
+// - Les images publiques sont stockées dans Supabase Storage.
+// - Les PDF de formation sont stockés dans un bucket PRIVÉ.
+// - La base conserve uniquement le chemin privé du PDF.
+// - Le paiement est confirmé exclusivement côté serveur.
+// - Une formation n'est délivrée qu'après paiement confirmé.
+//
+// ============================================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+
+  runtime                = "nodejs"
+  moduleFormat           = "esm"
+  generatedFileExtension = "ts"
+  importFileExtension    = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum CourseImageType {
+  PRIMARY
+  SECONDARY
+}
+
+enum LessonType {
+  VIDEO
+  PDF
+  LINK
+  TEXT
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  MONEROO
+  MANUAL
+  OTHER
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  REVOKED
+}
+
+enum SupportStatus {
+  PENDING
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum SupportPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum DeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
+enum DeliveryType {
+  PURCHASE_EMAIL
+  RESEND_EMAIL
+}
+
+enum TokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+// ============================================================================
+// USER / CLIENT
+// ============================================================================
+
+model User {
+  id String @id @default(cuid())
+
+  firstName String?
+  lastName  String?
+
+  email String @unique
+
+  // Numéro facultatif pour le compte client.
+  phone String?
+
+  // Toujours un hash sécurisé.
+  // Jamais retourner ce champ depuis les API publiques.
+  passwordHash String
+
+  status UserStatus @default(ACTIVE)
+
+  emailVerifiedAt DateTime?
+  lastActivityAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders          Order[]
+  enrollments     Enrollment[]
+  lessonProgress  LessonProgress[]
+  supportRequests SupportRequest[]
+  accountTokens   AccountToken[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([lastActivityAt])
+}
+
+// ============================================================================
+// ACCOUNT TOKEN
+// Vérification e-mail / récupération du mot de passe
+// ============================================================================
+
+model AccountToken {
+  id String @id @default(cuid())
+
+  userId String
+
+  type TokenType
+
+  // Ne jamais stocker le token brut envoyé au client.
+  // Stocker uniquement son hash.
+  tokenHash String @unique
+
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([expiresAt])
+  @@index([userId, type])
+}
+
+// ============================================================================
+// COURSE / FORMATION
+// ============================================================================
+
+model Course {
+  id String @id @default(cuid())
+
+  title              String
+  shortDescription   String?
+  description        String
+  descriptionContent Json?
+
+  // Montants stockés sous forme d'entiers.
+  // Exemple XOF : 15000 = 15 000 FCFA.
+  price            Int
+  promotionalPrice Int?
+
+  currency String @default("XOF") @db.VarChar(3)
+
+  status CourseStatus @default(DRAFT)
+
+  publishedAt DateTime?
+
+  // --------------------------------------------------------------------------
+  // CONTENU PRIVÉ À LIVRER APRÈS PAIEMENT
+  // --------------------------------------------------------------------------
+
+  // Chemin du fichier dans le bucket Supabase privé.
+  // Exemple :
+  // formations/clxxxxxxxx/formation.pdf
+  //
+  // Ne jamais enregistrer ici une URL publique permanente.
+  privatePdfPath String?
+
+  // Nom original / nom d'affichage du PDF.
+  privatePdfName String?
+
+  // Taille du PDF en octets.
+  privatePdfSize Int?
+
+  // Lien privé associé à la formation.
+  // Cette valeur ne doit jamais être exposée dans les API publiques
+  // du catalogue.
+  privateAccessUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  images            CourseImage[]
+  descriptionImages CourseDescriptionImage[]
+  modules           CourseModule[]
+  orderItems        OrderItem[]
+  enrollments       Enrollment[]
+  supportRequests   SupportRequest[]
+  deliveries        CourseDelivery[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([publishedAt])
+  @@index([status, createdAt])
+}
+
+// ============================================================================
+// COURSE IMAGE
+// Images principales et secondaires du catalogue
+// ============================================================================
+
+model CourseImage {
+  id String @id @default(cuid())
+
+  courseId String
+
+  type CourseImageType
+
+  // URL publique de l'image de présentation.
+  url String
+
+  altText String?
+
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  // Maximum logique :
+  // - une PRIMARY
+  // - une SECONDARY
+  @@unique([courseId, type])
+  @@index([courseId])
+}
+
+// ============================================================================
+// COURSE DESCRIPTION IMAGE
+// Images publiques utilisées dans la présentation détaillée d'une formation
+// ============================================================================
+
+model CourseDescriptionImage {
+  id String @id @default(cuid())
+
+  courseId String
+
+  // URL publique de l'image stockée dans Supabase Storage.
+  url String
+
+  // Texte alternatif pour l'accessibilité et le référencement.
+  altText String?
+
+  // Légende facultative affichable sous l'image.
+  caption String?
+
+  // Ordre d'affichage dans la présentation détaillée de la formation.
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, position])
+  @@index([courseId])
+}
+
+// ============================================================================
+// COURSE MODULE
+// ============================================================================
+
+model CourseModule {
+  id String @id @default(cuid())
+
+  courseId String
+
+  title       String
+  description String?
+
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  lessons Lesson[]
+
+  @@unique([courseId, position])
+  @@index([courseId])
+}
+
+// ============================================================================
+// LESSON
+// ============================================================================
+
+model Lesson {
+  id String @id @default(cuid())
+
+  moduleId String
+
+  title String
+
+  type LessonType
+
+  position Int @default(0)
+
+  durationMinutes Int?
+
+  // URL ou chemin technique de la ressource.
+  //
+  // La connaissance de cette valeur ne constitue jamais
+  // une autorisation d'accès.
+  resourceUrl String?
+
+  content String?
+
+  isPublished Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  module CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  progress LessonProgress[]
+
+  @@unique([moduleId, position])
+  @@index([moduleId])
+  @@index([isPublished])
+}
+
+// ============================================================================
+// ORDER / COMMANDE
+// ============================================================================
+
+model Order {
+  id String @id @default(cuid())
+
+  // Référence publique AfriSkill AI.
+  reference String @unique
+
+  userId String
+
+  status OrderStatus @default(PENDING)
+
+  subtotal       Int
+  discountAmount Int @default(0)
+  totalAmount    Int
+
+  currency String @default("XOF") @db.VarChar(3)
+
+  // --------------------------------------------------------------------------
+  // SNAPSHOT CLIENT AU MOMENT DE LA COMMANDE
+  // --------------------------------------------------------------------------
+  //
+  // On conserve ces informations même si le client modifie ensuite
+  // son profil.
+
+  customerFirstName String?
+  customerLastName  String?
+  customerEmail     String
+  customerPhone     String?
+
+  paidAt      DateTime?
+  cancelledAt DateTime?
+  refundedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  items       OrderItem[]
+  payments    Payment[]
+  enrollments Enrollment[]
+  deliveries  CourseDelivery[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([customerEmail])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+// ============================================================================
+// ORDER ITEM
+// ============================================================================
+
+model OrderItem {
+  id String @id @default(cuid())
+
+  orderId  String
+  courseId String
+
+  // Snapshots pour préserver l'historique.
+  courseTitle String
+  unitPrice   Int
+
+  quantity Int @default(1)
+
+  totalAmount Int
+
+  currency String @default("XOF") @db.VarChar(3)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Restrict)
+
+  // Une formation ne doit apparaître qu'une fois
+  // dans une même commande.
+  @@unique([orderId, courseId])
+  @@index([orderId])
+  @@index([courseId])
+}
+
+// ============================================================================
+// PAYMENT / PAIEMENT
+// ============================================================================
+
+model Payment {
+  id String @id @default(cuid())
+
+  orderId String
+
+  // Référence interne AfriSkill AI.
+  reference String @unique
+
+  provider PaymentProvider
+
+  // Identifiant retourné par le prestataire.
+  providerPaymentId String?
+
+  status PaymentStatus @default(PENDING)
+
+  amount Int
+
+  currency String @default("XOF") @db.VarChar(3)
+
+  // Métadonnées techniques non sensibles.
+  //
+  // Ne jamais stocker :
+  // - numéro complet de carte
+  // - CVV
+  // - clé API
+  // - secret webhook
+  // - mot de passe
+  metadata Json?
+
+  // Date de dernière vérification auprès du prestataire.
+  verifiedAt DateTime?
+
+  paidAt      DateTime?
+  failedAt    DateTime?
+  cancelledAt DateTime?
+  refundedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  enrollments Enrollment[]
+  deliveries  CourseDelivery[]
+
+  @@unique([provider, providerPaymentId])
+  @@index([orderId])
+  @@index([status])
+  @@index([provider])
+  @@index([createdAt])
+  @@index([status, createdAt])
+}
+
+// ============================================================================
+// ENROLLMENT / ACCÈS À UNE FORMATION
+// ============================================================================
+
+model Enrollment {
+  id String @id @default(cuid())
+
+  userId   String
+  courseId String
+
+  // Commande ayant donné l'accès.
+  orderId String
+
+  // Paiement ayant validé l'accès.
+  paymentId String?
+
+  status EnrollmentStatus @default(ACTIVE)
+
+  enrolledAt DateTime @default(now())
+
+  completedAt DateTime?
+  revokedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  // Un seul accès logique à une même formation
+  // pour un même utilisateur.
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+  @@index([orderId])
+  @@index([paymentId])
+  @@index([status])
+}
+
+// ============================================================================
+// COURSE DELIVERY
+// HISTORIQUE DE LIVRAISON APRÈS PAIEMENT
+// ============================================================================
+
+model CourseDelivery {
+  id String @id @default(cuid())
+
+  orderId   String
+  courseId  String
+  paymentId String?
+
+  // E-mail réellement utilisé pour la livraison.
+  recipientEmail String
+
+  type DeliveryType @default(PURCHASE_EMAIL)
+
+  status DeliveryStatus @default(PENDING)
+
+  // Identifiant retourné par le fournisseur d'e-mail
+  // (Resend, etc.).
+  providerMessageId String?
+
+  // Nombre de tentatives d'envoi.
+  attempts Int @default(0)
+
+  lastAttemptAt DateTime?
+  sentAt        DateTime?
+
+  // Erreur technique éventuelle.
+  // Ne jamais y stocker de secrets.
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([courseId])
+  @@index([paymentId])
+  @@index([recipientEmail])
+  @@index([status])
+  @@index([createdAt])
+  @@index([status, createdAt])
+}
+
+// ============================================================================
+// LESSON PROGRESS
+// ============================================================================
+
+model LessonProgress {
+  id String @id @default(cuid())
+
+  userId   String
+  lessonId String
+
+  isCompleted Boolean @default(false)
+
+  // La couche applicative impose 0 à 100.
+  progressPercent Int @default(0)
+
+  // La couche applicative refuse les valeurs négatives.
+  lastPositionSeconds Int @default(0)
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([userId])
+  @@index([lessonId])
+  @@index([isCompleted])
+}
+
+// ============================================================================
+// ACCOMPAGNEMENT
+// ============================================================================
+
+model SupportRequest {
+  id String @id @default(cuid())
+
+  userId   String
+  courseId String?
+
+  subject String
+  message String?
+
+  status   SupportStatus   @default(PENDING)
+  priority SupportPriority @default(NORMAL)
+
+  resolvedAt DateTime?
+  closedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course? @relation(fields: [courseId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([courseId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
+}
