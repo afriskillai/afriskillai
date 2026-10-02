@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import AdminShell from "@/components/admin/AdminShell";
-import FormationForm from "@/components/admin/formations/FormationForm";
+import FormationFormClient from "@/components/admin/formations/FormationFormClient";
 import { getAdminSession } from "@/lib/admin-session";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,6 @@ export default async function NouvelleFormationPage() {
   return (
     <AdminShell adminEmail={session.email}>
       <div className="space-y-6">
-        {/* Fil d'Ariane */}
         <nav
           aria-label="Fil d’Ariane"
           className="flex flex-wrap items-center gap-2 text-sm"
@@ -46,7 +45,6 @@ export default async function NouvelleFormationPage() {
           </span>
         </nav>
 
-        {/* En-tête */}
         <section className="relative overflow-hidden rounded-[26px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <div
             aria-hidden="true"
@@ -79,10 +77,9 @@ export default async function NouvelleFormationPage() {
                 </h1>
 
                 <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500 sm:text-base">
-                  Créez la fiche commerciale de votre nouvelle
-                  formation. Vous pourrez ensuite organiser son
-                  programme, ses modules, ses vidéos, ses PDF et
-                  ses ressources pédagogiques.
+                  Créez la fiche commerciale de votre nouvelle formation.
+                  Vous pourrez ensuite organiser son programme, ses modules,
+                  ses vidéos, ses PDF et ses ressources pédagogiques.
                 </p>
               </div>
 
@@ -105,7 +102,6 @@ export default async function NouvelleFormationPage() {
           </div>
         </section>
 
-        {/* Informations importantes */}
         <section className="grid gap-4 md:grid-cols-3">
           <InformationCard
             icon={<InformationIcon />}
@@ -126,10 +122,8 @@ export default async function NouvelleFormationPage() {
           />
         </section>
 
-        {/* Formulaire */}
-        <FormationForm mode="create" />
+        <FormationFormClient />
 
-        {/* Note de sécurité */}
         <section className="rounded-[22px] border border-blue-100 bg-blue-50/60 p-5 sm:p-6">
           <div className="flex items-start gap-4">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-blue-600 shadow-sm">
@@ -142,10 +136,9 @@ export default async function NouvelleFormationPage() {
               </h2>
 
               <p className="mt-1 max-w-3xl text-xs leading-6 text-blue-800/70 sm:text-sm">
-                La création de cette fiche ne donne pas
-                automatiquement accès au contenu pédagogique.
-                Les modules et leçons seront associés à la
-                formation et leur accès sera contrôlé par les
+                La création de cette fiche ne donne pas automatiquement
+                accès au contenu pédagogique. Les modules et leçons seront
+                associés à la formation et leur accès sera contrôlé par les
                 achats et inscriptions validés.
               </p>
             </div>
@@ -173,9 +166,7 @@ function InformationCard({
         </div>
 
         <div>
-          <h2 className="text-sm font-bold text-slate-900">
-            {title}
-          </h2>
+          <h2 className="text-sm font-bold text-slate-900">{title}</h2>
 
           <p className="mt-1 text-xs leading-5 text-slate-500">
             {description}
