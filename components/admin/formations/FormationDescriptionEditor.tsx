@@ -2197,5 +2197,6 @@ function getErrorMessage(
     return error.message.trim();
   }
 
+  
   return fallback;
 }
