@@ -25,6 +25,7 @@ import {
  * - hiérarchie commerciale forte ;
  * - prix et promotion clairement présentés ;
  * - description enrichie conservée ;
+ * - images affichées entièrement sans recadrage ;
  * - images conservées dans leur ordre ;
  * - FAQ interactive intégrée ;
  * - informations de livraison clairement expliquées ;
@@ -391,6 +392,11 @@ function DocumentIcon() {
  * ============================================================================
  * IMAGE PRINCIPALE
  * ============================================================================
+ *
+ * L'image réelle conserve maintenant son ratio naturel.
+ * Aucun aspect ratio fixe et aucun object-cover ne sont appliqués.
+ * L'image est donc affichée entièrement.
+ * ============================================================================
  */
 
 function FormationPrimaryImage({
@@ -441,7 +447,7 @@ function FormationPrimaryImage({
       alt={course.primaryImage.alt}
       loading="eager"
       decoding="async"
-      className="block aspect-[16/10] w-full object-cover"
+      className="block h-auto w-full object-contain"
     />
   );
 }
@@ -449,6 +455,10 @@ function FormationPrimaryImage({
 /**
  * ============================================================================
  * IMAGE SECONDAIRE
+ * ============================================================================
+ *
+ * Aucun recadrage.
+ * L'image conserve également son ratio naturel.
  * ============================================================================
  */
 
@@ -470,7 +480,7 @@ function FormationSecondaryImage({
           alt={course.secondaryImage.alt}
           loading="lazy"
           decoding="async"
-          className="block h-auto max-h-[520px] w-full object-cover"
+          className="block h-auto w-full object-contain"
         />
       </div>
     </figure>
