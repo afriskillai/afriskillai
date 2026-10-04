@@ -17,28 +17,34 @@ import {
  * AFRISKILL AI — FORMATION DESCRIPTION RENDERER
  * ============================================================================
  *
- * Renderer public de la description enrichie d'une formation.
+ * Renderer public sécurisé de la description enrichie.
  *
- * Principes :
+ * Supporte :
+ * - texte ;
+ * - titres ;
+ * - listes ;
+ * - citations ;
+ * - séparateurs ;
+ * - images ;
+ * - vidéos YouTube ;
+ * - vidéos Vimeo ;
+ * - anciennes vidéos enregistrées uniquement avec videoUrl ;
+ * - fallback vers la description texte historique.
+ *
+ * Sécurité :
  * - aucun dangerouslySetInnerHTML ;
- * - aucun HTML arbitraire venant de la base ;
- * - aucun import de l'éditeur TipTap ;
- * - rendu uniquement des nœuds autorisés par nos types publics ;
- * - conservation exacte de l'ordre texte / image / vidéo / texte ;
- * - validation défensive des images, liens et vidéos ;
- * - YouTube et Vimeo uniquement pour les vidéos ;
- * - fallback vers la description texte historique ;
- * - compatible Server Component ;
- * - responsive par défaut.
+ * - aucun HTML arbitraire ;
+ * - aucune iframe arbitraire ;
+ * - YouTube et Vimeo uniquement ;
+ * - reconstruction serveur des URLs d'embed.
+ *
  * ============================================================================
  */
 
 type FormationDescriptionRendererProps = {
   course: Pick<
     PublicCourseDetail,
-    | "title"
-    | "description"
-    | "descriptionContent"
+    "title" | "description" | "descriptionContent"
   >;
   className?: string;
 };
@@ -63,23 +69,16 @@ type ValidatedPublicVideo = {
 };
 
 function joinClassNames(
-  ...values: Array<
-    string | null | undefined | false
-  >
+  ...values: Array<string | null | undefined | false>
 ): string {
-  return values
-    .filter(Boolean)
-    .join(" ");
+  return values.filter(Boolean).join(" ");
 }
 
-/**
- * Vérifie qu'une URL d'image peut être rendue
- * publiquement.
- *
- * Les URLs sont déjà normalisées dans lib/public-courses.ts,
- * mais cette vérification constitue une seconde barrière
- * au niveau du renderer.
+/* ============================================================================
+ * URLS
+ * ============================================================================
  */
+
 function isAllowedImageUrl(
   value: string | null | undefined,
 ): value is string {
@@ -87,8 +86,7 @@ function isAllowedImageUrl(
     return false;
   }
 
-  const normalizedValue =
-    value.trim();
+  const normalizedValue = value.trim();
 
   if (!normalizedValue) {
     return false;
@@ -101,9 +99,6 @@ function isAllowedImageUrl(
   );
 }
 
-/**
- * Vérifie qu'un lien public peut être rendu.
- */
 function isAllowedLinkUrl(
   value: string | null | undefined,
 ): value is string {
@@ -111,8 +106,7 @@ function isAllowedLinkUrl(
     return false;
   }
 
-  const normalizedValue =
-    value.trim();
+  const normalizedValue = value.trim();
 
   return (
     normalizedValue.startsWith("https://") ||
@@ -120,30 +114,22 @@ function isAllowedLinkUrl(
   );
 }
 
-/**
- * Applique les marques de texte dans leur ordre.
- *
- * Exemple :
- * text
- *   -> bold
- *   -> italic
- *   -> link
+/* ============================================================================
+ * TEXT MARKS
+ * ============================================================================
  */
+
 function TextMarkRenderer({
   children,
   marks,
 }: TextMarkRendererProps) {
-  if (
-    !marks ||
-    marks.length === 0
-  ) {
+  if (!marks || marks.length === 0) {
     return <>{children}</>;
   }
 
   return marks.reduce<ReactNode>(
     (content, mark, index) => {
-      const key =
-        `${mark.type}-${index}`;
+      const key = `${mark.type}-${index}`;
 
       switch (mark.type) {
         case "bold":
@@ -158,10 +144,7 @@ function TextMarkRenderer({
 
         case "italic":
           return (
-            <em
-              key={key}
-              className="italic"
-            >
+            <em key={key} className="italic">
               {content}
             </em>
           );
@@ -187,12 +170,9 @@ function TextMarkRenderer({
           );
 
         case "link": {
-          const href =
-            mark.attrs?.href;
+          const href = mark.attrs?.href;
 
-          if (
-            !isAllowedLinkUrl(href)
-          ) {
+          if (!isAllowedLinkUrl(href)) {
             return content;
           }
 
@@ -217,9 +197,11 @@ function TextMarkRenderer({
   );
 }
 
-/**
- * Rend récursivement le contenu enfant d'un nœud.
+/* ============================================================================
+ * CHILDREN
+ * ============================================================================
  */
+
 function renderChildren(
   node: PublicCourseDescriptionNode,
   context: RenderNodeContext,
@@ -232,33 +214,32 @@ function renderChildren(
     return null;
   }
 
-  return node.content.map(
-    (child, index) =>
-      renderNode(
-        child,
-        context,
-        `${path}-${index}`,
-      ),
+  return node.content.map((child, index) =>
+    renderNode(
+      child,
+      context,
+      `${path}-${index}`,
+    ),
   );
 }
 
-/**
- * Rend un titre de description.
+/* ============================================================================
+ * HEADINGS
+ * ============================================================================
  */
+
 function renderHeading(
   node: PublicCourseDescriptionNode,
   context: RenderNodeContext,
   path: string,
 ): ReactNode {
-  const children =
-    renderChildren(
-      node,
-      context,
-      path,
-    );
+  const children = renderChildren(
+    node,
+    context,
+    path,
+  );
 
-  const rawLevel =
-    node.attrs?.level;
+  const rawLevel = node.attrs?.level;
 
   const level =
     typeof rawLevel === "number"
@@ -334,17 +315,17 @@ function renderHeading(
   }
 }
 
-/**
- * Rend une image intégrée exactement à la position
- * où elle apparaît dans descriptionContent.
+/* ============================================================================
+ * IMAGES
+ * ============================================================================
  */
+
 function renderDescriptionImage(
   node: PublicCourseDescriptionNode,
   context: RenderNodeContext,
   path: string,
 ): ReactNode {
-  const src =
-    node.attrs?.src;
+  const src = node.attrs?.src;
 
   if (!isAllowedImageUrl(src)) {
     return null;
@@ -367,14 +348,6 @@ function renderDescriptionImage(
       key={path}
       className="my-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm sm:my-10 sm:rounded-3xl"
     >
-      {/*
-       * On utilise volontairement <img> ici :
-       * les images de description peuvent provenir du stockage public
-       * configuré pour les formations et leurs dimensions sont variables.
-       *
-       * Cela évite d'imposer une configuration next/image différente
-       * de celle déjà présente dans le projet.
-       */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={src}
@@ -393,21 +366,8 @@ function renderDescriptionImage(
   );
 }
 
-/**
- * ============================================================================
- * VIDÉOS PUBLIQUES DE DÉMONSTRATION
- * ============================================================================
- *
- * Une vidéo n'est jamais rendue directement depuis une URL arbitraire.
- *
- * Le renderer :
- * 1. vérifie le provider ;
- * 2. vérifie le videoId ;
- * 3. reconstruit lui-même l'URL du lecteur ;
- * 4. n'autorise que YouTube et Vimeo.
- *
- * Le champ videoUrl enregistré dans la description est donc informatif.
- * Il ne devient jamais directement le src de l'iframe.
+/* ============================================================================
+ * VIDEO HELPERS
  * ============================================================================
  */
 
@@ -425,6 +385,244 @@ function isValidVimeoVideoId(
   return /^\d{5,15}$/.test(value);
 }
 
+function extractYouTubeVideoId(
+  rawUrl: string,
+): string | null {
+  const value = rawUrl.trim();
+
+  if (!value) {
+    return null;
+  }
+
+  /*
+   * Accepte également un ID YouTube direct.
+   */
+  if (isValidYouTubeVideoId(value)) {
+    return value;
+  }
+
+  let url: URL;
+
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+
+  const hostname = url.hostname
+    .toLowerCase()
+    .replace(/^www\./, "");
+
+  let videoId: string | null = null;
+
+  if (hostname === "youtu.be") {
+    videoId =
+      url.pathname
+        .split("/")
+        .filter(Boolean)[0] ?? null;
+  }
+
+  if (
+    hostname === "youtube.com" ||
+    hostname === "m.youtube.com" ||
+    hostname === "music.youtube.com" ||
+    hostname === "youtube-nocookie.com"
+  ) {
+    if (url.pathname === "/watch") {
+      videoId = url.searchParams.get("v");
+    } else {
+      const parts = url.pathname
+        .split("/")
+        .filter(Boolean);
+
+      if (
+        parts[0] === "embed" ||
+        parts[0] === "shorts" ||
+        parts[0] === "live"
+      ) {
+        videoId = parts[1] ?? null;
+      }
+    }
+  }
+
+  if (
+    !videoId ||
+    !isValidYouTubeVideoId(videoId)
+  ) {
+    return null;
+  }
+
+  return videoId;
+}
+
+function extractVimeoVideoId(
+  rawUrl: string,
+): string | null {
+  const value = rawUrl.trim();
+
+  if (!value) {
+    return null;
+  }
+
+  /*
+   * Accepte également un ID Vimeo direct.
+   */
+  if (isValidVimeoVideoId(value)) {
+    return value;
+  }
+
+  let url: URL;
+
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+
+  const hostname = url.hostname
+    .toLowerCase()
+    .replace(/^www\./, "");
+
+  if (
+    hostname !== "vimeo.com" &&
+    hostname !== "player.vimeo.com"
+  ) {
+    return null;
+  }
+
+  const parts = url.pathname
+    .split("/")
+    .filter(Boolean);
+
+  /*
+   * On recherche depuis la fin afin de supporter :
+   *
+   * vimeo.com/123456789
+   * player.vimeo.com/video/123456789
+   * vimeo.com/channels/.../123456789
+   */
+  for (
+    let index = parts.length - 1;
+    index >= 0;
+    index -= 1
+  ) {
+    const candidate = parts[index];
+
+    if (
+      candidate &&
+      isValidVimeoVideoId(candidate)
+    ) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function detectVideoFromUrl(
+  rawUrl: string,
+): {
+  provider: PublicCourseDescriptionVideoProvider;
+  videoId: string;
+} | null {
+  const youtubeVideoId =
+    extractYouTubeVideoId(rawUrl);
+
+  if (youtubeVideoId) {
+    return {
+      provider: "youtube",
+      videoId: youtubeVideoId,
+    };
+  }
+
+  const vimeoVideoId =
+    extractVimeoVideoId(rawUrl);
+
+  if (vimeoVideoId) {
+    return {
+      provider: "vimeo",
+      videoId: vimeoVideoId,
+    };
+  }
+
+  return null;
+}
+
+function createValidatedVideo(
+  provider: PublicCourseDescriptionVideoProvider,
+  videoId: string,
+): ValidatedPublicVideo | null {
+  const normalizedVideoId =
+    videoId.trim();
+
+  if (provider === "youtube") {
+    if (
+      !isValidYouTubeVideoId(
+        normalizedVideoId,
+      )
+    ) {
+      return null;
+    }
+
+    return {
+      provider,
+      videoId: normalizedVideoId,
+      embedUrl:
+        `https://www.youtube-nocookie.com/embed/${encodeURIComponent(
+          normalizedVideoId,
+        )}`,
+      canonicalUrl:
+        `https://www.youtube.com/watch?v=${encodeURIComponent(
+          normalizedVideoId,
+        )}`,
+    };
+  }
+
+  if (provider === "vimeo") {
+    if (
+      !isValidVimeoVideoId(
+        normalizedVideoId,
+      )
+    ) {
+      return null;
+    }
+
+    return {
+      provider,
+      videoId: normalizedVideoId,
+      embedUrl:
+        `https://player.vimeo.com/video/${encodeURIComponent(
+          normalizedVideoId,
+        )}`,
+      canonicalUrl:
+        `https://vimeo.com/${encodeURIComponent(
+          normalizedVideoId,
+        )}`,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Valide une vidéo enregistrée.
+ *
+ * Deux formats sont supportés :
+ *
+ * Nouveau format :
+ * {
+ *   provider: "youtube",
+ *   videoId: "...",
+ *   videoUrl: "..."
+ * }
+ *
+ * Ancien / format compatible :
+ * {
+ *   videoUrl: "https://youtube.com/..."
+ * }
+ *
+ * videoUrl n'est jamais directement utilisé comme src d'iframe.
+ */
 function validatePublicVideo(
   node: PublicCourseDescriptionNode,
 ): ValidatedPublicVideo | null {
@@ -434,67 +632,81 @@ function validatePublicVideo(
   const rawVideoId =
     node.attrs?.videoId;
 
+  /*
+   * 1. Format normalisé provider + videoId.
+   */
   if (
-    !isPublicCourseDescriptionVideoProvider(
+    isPublicCourseDescriptionVideoProvider(
       provider,
-    ) ||
-    typeof rawVideoId !== "string"
+    ) &&
+    typeof rawVideoId === "string" &&
+    rawVideoId.trim()
   ) {
-    return null;
+    const validated =
+      createValidatedVideo(
+        provider,
+        rawVideoId,
+      );
+
+    if (validated) {
+      return validated;
+    }
   }
 
-  const videoId =
-    rawVideoId.trim();
+  /*
+   * 2. Rétrocompatibilité :
+   * on récupère provider/videoId depuis videoUrl.
+   */
+  const rawVideoUrl =
+    node.attrs?.videoUrl;
 
-  if (provider === "youtube") {
-    if (
-      !isValidYouTubeVideoId(videoId)
-    ) {
-      return null;
+  if (
+    typeof rawVideoUrl === "string" &&
+    rawVideoUrl.trim()
+  ) {
+    const detected =
+      detectVideoFromUrl(
+        rawVideoUrl,
+      );
+
+    if (detected) {
+      return createValidatedVideo(
+        detected.provider,
+        detected.videoId,
+      );
     }
-
-    return {
-      provider,
-      videoId,
-      embedUrl:
-        `https://www.youtube-nocookie.com/embed/${encodeURIComponent(
-          videoId,
-        )}`,
-      canonicalUrl:
-        `https://www.youtube.com/watch?v=${encodeURIComponent(
-          videoId,
-        )}`,
-    };
   }
 
-  if (provider === "vimeo") {
-    if (
-      !isValidVimeoVideoId(videoId)
-    ) {
-      return null;
-    }
+  /*
+   * 3. Tolérance supplémentaire :
+   * certains anciens contenus peuvent avoir placé
+   * l'URL complète dans videoId.
+   */
+  if (
+    typeof rawVideoId === "string" &&
+    rawVideoId.trim()
+  ) {
+    const detected =
+      detectVideoFromUrl(
+        rawVideoId,
+      );
 
-    return {
-      provider,
-      videoId,
-      embedUrl:
-        `https://player.vimeo.com/video/${encodeURIComponent(
-          videoId,
-        )}`,
-      canonicalUrl:
-        `https://vimeo.com/${encodeURIComponent(
-          videoId,
-        )}`,
-    };
+    if (detected) {
+      return createValidatedVideo(
+        detected.provider,
+        detected.videoId,
+      );
+    }
   }
 
   return null;
 }
 
-/**
- * Rend une vidéo de démonstration exactement à la
- * position où son nœud apparaît dans descriptionContent.
+/* ============================================================================
+ * VIDEO RENDERER
+ * ============================================================================
  */
+
 function renderDescriptionVideo(
   node: PublicCourseDescriptionNode,
   context: RenderNodeContext,
@@ -524,7 +736,7 @@ function renderDescriptionVideo(
   return (
     <figure
       key={path}
-      className="my-8 overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-sm sm:my-10 sm:rounded-3xl"
+      className="my-8 overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-lg sm:my-10 sm:rounded-3xl"
     >
       <div className="relative aspect-video w-full overflow-hidden bg-black">
         <iframe
@@ -540,7 +752,7 @@ function renderDescriptionVideo(
 
       <figcaption className="flex flex-col gap-2 border-t border-white/10 bg-slate-950 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="min-w-0">
-          <p className="truncate text-sm font-extrabold text-white sm:text-base">
+          <p className="text-sm font-extrabold text-white sm:text-base">
             {title}
           </p>
 
@@ -563,9 +775,11 @@ function renderDescriptionVideo(
   );
 }
 
-/**
- * Renderer principal d'un nœud structuré.
+/* ============================================================================
+ * NODE RENDERER
+ * ============================================================================
  */
+
 function renderNode(
   node: PublicCourseDescriptionNode,
   context: RenderNodeContext,
@@ -700,9 +914,11 @@ function renderNode(
   }
 }
 
-/**
- * Rend le document enrichi complet.
+/* ============================================================================
+ * RICH DESCRIPTION
+ * ============================================================================
  */
+
 function renderRichDescription(
   document: PublicCourseDescriptionDocument,
   courseTitle: string,
@@ -730,23 +946,20 @@ function renderRichDescription(
   );
 }
 
-/**
- * Rend l'ancienne description texte lorsque
- * descriptionContent n'existe pas.
- *
- * Les retours à la ligne doubles deviennent des paragraphes.
- * Les retours simples sont conservés grâce à whitespace-pre-line.
+/* ============================================================================
+ * FALLBACK DESCRIPTION
+ * ============================================================================
  */
+
 function renderFallbackDescription(
   description: string,
 ): ReactNode {
-  const paragraphs =
-    description
-      .split(/\n\s*\n/g)
-      .map((paragraph) =>
-        paragraph.trim(),
-      )
-      .filter(Boolean);
+  const paragraphs = description
+    .split(/\n\s*\n/g)
+    .map((paragraph) =>
+      paragraph.trim(),
+    )
+    .filter(Boolean);
 
   if (paragraphs.length === 0) {
     return null;
@@ -764,9 +977,8 @@ function renderFallbackDescription(
   );
 }
 
-/**
- * ============================================================================
- * COMPOSANT PUBLIC
+/* ============================================================================
+ * PUBLIC COMPONENT
  * ============================================================================
  */
 
