@@ -16,9 +16,6 @@ const MAX_SHORT_DESCRIPTION_LENGTH = 300;
 const MAX_DESCRIPTION_LENGTH = 50_000;
 const MAX_PRIVATE_ACCESS_URL_LENGTH = 2_048;
 
-/*
- * Limites de sécurité du document enrichi.
- */
 const MAX_DESCRIPTION_CONTENT_DEPTH = 20;
 const MAX_DESCRIPTION_CONTENT_NODES = 5_000;
 const MAX_DESCRIPTION_TEXT_NODE_LENGTH = 50_000;
@@ -28,13 +25,8 @@ const MAX_DESCRIPTION_IMAGE_ID_LENGTH = 191;
 const MAX_DESCRIPTION_IMAGE_URL_LENGTH = 4_096;
 const MAX_DESCRIPTION_IMAGE_ALT_LENGTH = 300;
 const MAX_DESCRIPTION_IMAGE_TITLE_LENGTH = 300;
+const MAX_DESCRIPTION_IMAGE_DIMENSION = 10_000;
 
-/*
- * Vidéos publiques de démonstration.
- *
- * Elles sont enregistrées uniquement sous forme de données structurées.
- * Aucun HTML / iframe fourni par le navigateur n'est accepté.
- */
 const MAX_DESCRIPTION_VIDEO_ID_LENGTH = 191;
 const MAX_DESCRIPTION_VIDEO_URL_LENGTH = 2_048;
 const MAX_DESCRIPTION_VIDEO_TITLE_LENGTH = 300;
@@ -50,15 +42,6 @@ const ALLOWED_VIDEO_PROVIDERS = new Set([
   "vimeo",
 ]);
 
-/*
- * Types de nœuds autorisés dans le document TipTap.
- *
- * IMPORTANT :
- * - aucun HTML arbitraire ;
- * - aucun script ;
- * - aucun iframe brut ;
- * - les vidéos passent exclusivement par le nœud "video".
- */
 const ALLOWED_DESCRIPTION_NODE_TYPES = new Set([
   "doc",
   "paragraph",
@@ -74,9 +57,6 @@ const ALLOWED_DESCRIPTION_NODE_TYPES = new Set([
   "video",
 ]);
 
-/*
- * Marques de texte autorisées.
- */
 const ALLOWED_DESCRIPTION_MARK_TYPES = new Set([
   "bold",
   "italic",
@@ -88,33 +68,12 @@ const ALLOWED_DESCRIPTION_MARK_TYPES = new Set([
 type CreateFormationBody = {
   title?: unknown;
   shortDescription?: unknown;
-
-  /*
-   * Version texte brut conservée pour :
-   * - compatibilité ;
-   * - recherche ;
-   * - résumé ;
-   * - anciennes formations.
-   */
   description?: unknown;
-
-  /*
-   * Document structuré TipTap.
-   */
   descriptionContent?: unknown;
-
   price?: unknown;
   promotionalPrice?: unknown;
-
   currency?: unknown;
   status?: unknown;
-
-  /**
-   * Contenu privé.
-   *
-   * Ne doit jamais être retourné par les endpoints publics
-   * du catalogue.
-   */
   privateAccessUrl?: unknown;
 };
 
@@ -146,18 +105,8 @@ type DescriptionValidationState = {
  * ============================================================================
  * GET /api/admin/formations
  * ============================================================================
- *
- * Liste administrative des formations.
- *
- * IMPORTANT :
- * Même dans cette liste admin, on ne retourne pas :
- * - privateAccessUrl
- * - privatePdfPath
- *
- * descriptionContent n'est volontairement pas retourné ici :
- * la liste administrative n'a pas besoin de charger le document
- * enrichi complet de chaque formation.
  */
+
 export async function GET(request: Request) {
   const session = await getAdminSession();
 
@@ -334,10 +283,6 @@ export async function GET(request: Request) {
             course._count
               .enrollments,
 
-          /*
-           * On peut indiquer à l'admin si les contenus existent,
-           * sans révéler leurs valeurs.
-           */
           deliveryContent: {
             hasPdf:
               Boolean(
@@ -370,7 +315,6 @@ export async function GET(request: Request) {
           pagination: {
             page,
             pageSize,
-
             totalItems,
             totalPages,
 
@@ -404,21 +348,8 @@ export async function GET(request: Request) {
  * ============================================================================
  * POST /api/admin/formations
  * ============================================================================
- *
- * Crée une formation.
- *
- * Cette route :
- * - exige une session administrateur ;
- * - exige un corps JSON ;
- * - valide toutes les données côté serveur ;
- * - conserve la description texte ;
- * - accepte la description TipTap structurée ;
- * - accepte les images de description ;
- * - accepte les vidéos publiques YouTube/Vimeo ;
- * - n'accepte jamais de HTML arbitraire ;
- * - conserve le contenu privé séparé ;
- * - ne fait confiance à aucune donnée venant du navigateur.
  */
+
 export async function POST(request: Request) {
   const session =
     await getAdminSession();
@@ -491,10 +422,6 @@ export async function POST(request: Request) {
           body.promotionalPrice,
         );
 
-  // ==========================================================================
-  // VALIDATION — INFORMATIONS GÉNÉRALES
-  // ==========================================================================
-
   if (
     title.length < 3 ||
     title.length >
@@ -529,10 +456,6 @@ export async function POST(request: Request) {
     );
   }
 
-  // ==========================================================================
-  // VALIDATION — DESCRIPTION ENRICHIE
-  // ==========================================================================
-
   const descriptionContentResult =
     validateDescriptionContent(
       body.descriptionContent,
@@ -549,10 +472,6 @@ export async function POST(request: Request) {
 
   const descriptionContent =
     descriptionContentResult.value;
-
-  // ==========================================================================
-  // VALIDATION — PRIX
-  // ==========================================================================
 
   if (
     price === null ||
@@ -598,10 +517,6 @@ export async function POST(request: Request) {
     );
   }
 
-  // ==========================================================================
-  // VALIDATION — STATUT
-  // ==========================================================================
-
   const status =
     statusInput ===
     "published"
@@ -618,10 +533,6 @@ export async function POST(request: Request) {
       "Le statut de publication est invalide.",
     );
   }
-
-  // ==========================================================================
-  // VALIDATION — LIEN PRIVÉ
-  // ==========================================================================
 
   if (
     privateAccessUrl.length >
@@ -656,10 +567,6 @@ export async function POST(request: Request) {
       "Le lien privé doit utiliser HTTPS.",
     );
   }
-
-  // ==========================================================================
-  // CRÉATION
-  // ==========================================================================
 
   try {
     const now =
@@ -765,24 +672,12 @@ export async function POST(request: Request) {
   }
 }
 
-// ============================================================================
-// DESCRIPTION ENRICHIE
-// ============================================================================
-
 /**
- * Valide le document JSON produit par l'éditeur.
- *
- * Règles :
- * - racine obligatoirement "doc" ;
- * - liste blanche stricte de nœuds ;
- * - liste blanche stricte de marques ;
- * - aucun HTML brut ;
- * - profondeur limitée ;
- * - nombre de nœuds limité ;
- * - volume texte limité ;
- * - images HTTPS ;
- * - vidéos exclusivement YouTube/Vimeo.
+ * ============================================================================
+ * DESCRIPTION ENRICHIE
+ * ============================================================================
  */
+
 function validateDescriptionContent(
   value: unknown,
 ): DescriptionValidationResult {
@@ -882,9 +777,6 @@ function validateDescriptionNode(
     };
   }
 
-  /*
-   * Validation spécifique du texte.
-   */
   if (type === "text") {
     if (
       typeof node.text !==
@@ -931,9 +823,6 @@ function validateDescriptionNode(
     };
   }
 
-  /*
-   * Validation des attributs.
-   */
   const attrsResult =
     validateDescriptionNodeAttributes(
       type,
@@ -944,9 +833,6 @@ function validateDescriptionNode(
     return attrsResult;
   }
 
-  /*
-   * Validation des marques.
-   */
   const marksResult =
     validateDescriptionMarks(
       node.marks,
@@ -957,9 +843,6 @@ function validateDescriptionNode(
     return marksResult;
   }
 
-  /*
-   * Validation récursive.
-   */
   if (
     node.content !==
     undefined
@@ -1018,9 +901,6 @@ function validateDescriptionNodeAttributes(
     attrs === undefined ||
     attrs === null
   ) {
-    /*
-     * Images et vidéos nécessitent obligatoirement leurs attributs.
-     */
     if (type === "image") {
       return {
         ok: false,
@@ -1111,10 +991,6 @@ function validateDescriptionNodeAttributes(
     );
   }
 
-  /*
-   * Pour les autres nœuds actuellement supportés,
-   * aucun attribut métier n'est nécessaire.
-   */
   if (
     Object.keys(attrs).length >
     0
@@ -1131,6 +1007,29 @@ function validateDescriptionNodeAttributes(
   };
 }
 
+/**
+ * ============================================================================
+ * IMAGE DE DESCRIPTION
+ * ============================================================================
+ *
+ * Compatibilité TipTap :
+ * - src
+ * - imageId
+ * - alt
+ * - title
+ * - width
+ * - height
+ * - loading
+ * - decoding
+ *
+ * width / height peuvent être null, numériques ou représentés sous forme
+ * de chaîne. Ils sont uniquement des métadonnées de présentation.
+ *
+ * Aucun style arbitraire, event handler, HTML ou classe CSS arbitraire
+ * n'est accepté.
+ * ============================================================================
+ */
+
 function validateDescriptionImageAttributes(
   attrs: Record<string, unknown>,
 ): DescriptionNodeValidationResult {
@@ -1140,6 +1039,10 @@ function validateDescriptionImageAttributes(
       "imageId",
       "alt",
       "title",
+      "width",
+      "height",
+      "loading",
+      "decoding",
     ]);
 
   for (
@@ -1154,7 +1057,7 @@ function validateDescriptionImageAttributes(
       return {
         ok: false,
         message:
-          "Une image de la description contient un attribut non autorisé.",
+          `Une image de la description contient un attribut non autorisé : ${key}.`,
       };
     }
   }
@@ -1243,6 +1146,169 @@ function validateDescriptionImageAttributes(
     };
   }
 
+  const widthResult =
+    validateImageDimension(
+      attrs.width,
+      "largeur",
+    );
+
+  if (!widthResult.ok) {
+    return widthResult;
+  }
+
+  const heightResult =
+    validateImageDimension(
+      attrs.height,
+      "hauteur",
+    );
+
+  if (!heightResult.ok) {
+    return heightResult;
+  }
+
+  if (
+    attrs.loading !== undefined &&
+    attrs.loading !== null
+  ) {
+    const loading =
+      cleanString(
+        attrs.loading,
+      ).toLowerCase();
+
+    if (
+      loading !== "" &&
+      loading !== "lazy" &&
+      loading !== "eager"
+    ) {
+      return {
+        ok: false,
+        message:
+          "Le mode de chargement d'une image de la description est invalide.",
+      };
+    }
+  }
+
+  if (
+    attrs.decoding !== undefined &&
+    attrs.decoding !== null
+  ) {
+    const decoding =
+      cleanString(
+        attrs.decoding,
+      ).toLowerCase();
+
+    if (
+      decoding !== "" &&
+      decoding !== "async" &&
+      decoding !== "sync" &&
+      decoding !== "auto"
+    ) {
+      return {
+        ok: false,
+        message:
+          "Le mode de décodage d'une image de la description est invalide.",
+      };
+    }
+  }
+
+  return {
+    ok: true,
+  };
+}
+
+function validateImageDimension(
+  value: unknown,
+  label: string,
+): DescriptionNodeValidationResult {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return {
+      ok: true,
+    };
+  }
+
+  if (
+    typeof value === "number"
+  ) {
+    if (
+      !Number.isFinite(value) ||
+      value <= 0 ||
+      value >
+        MAX_DESCRIPTION_IMAGE_DIMENSION
+    ) {
+      return {
+        ok: false,
+        message:
+          `La ${label} d'une image de la description est invalide.`,
+      };
+    }
+
+    return {
+      ok: true,
+    };
+  }
+
+  if (
+    typeof value !== "string"
+  ) {
+    return {
+      ok: false,
+      message:
+        `La ${label} d'une image de la description est invalide.`,
+    };
+  }
+
+  const normalized =
+    value.trim();
+
+  if (!normalized) {
+    return {
+      ok: true,
+    };
+  }
+
+  if (
+    normalized === "auto"
+  ) {
+    return {
+      ok: true,
+    };
+  }
+
+  const numericMatch =
+    normalized.match(
+      /^(\d+(?:\.\d+)?)(px)?$/i,
+    );
+
+  if (!numericMatch) {
+    return {
+      ok: false,
+      message:
+        `La ${label} d'une image de la description est invalide.`,
+    };
+  }
+
+  const parsed =
+    Number(
+      numericMatch[1],
+    );
+
+  if (
+    !Number.isFinite(parsed) ||
+    parsed <= 0 ||
+    parsed >
+      MAX_DESCRIPTION_IMAGE_DIMENSION
+  ) {
+    return {
+      ok: false,
+      message:
+        `La ${label} d'une image de la description est invalide.`,
+    };
+  }
+
   return {
     ok: true,
   };
@@ -1252,27 +1318,8 @@ function validateDescriptionImageAttributes(
  * ============================================================================
  * VIDÉOS PUBLIQUES DE DÉMONSTRATION
  * ============================================================================
- *
- * Format attendu :
- *
- * {
- *   type: "video",
- *   attrs: {
- *     provider: "youtube" | "vimeo",
- *     videoId: "...",
- *     videoUrl: "https://...",
- *     videoTitle: "..."
- *   }
- * }
- *
- * Le serveur :
- * - refuse les providers inconnus ;
- * - refuse les attributs arbitraires ;
- * - vérifie l'ID ;
- * - vérifie l'URL ;
- * - vérifie que l'URL correspond réellement au provider et à l'ID ;
- * - n'accepte aucun iframe ou HTML.
  */
+
 function validateDescriptionVideoAttributes(
   attrs: Record<string, unknown>,
 ): DescriptionNodeValidationResult {
@@ -1418,20 +1465,12 @@ function isSafeVideoId(
   videoId: string,
 ) {
   if (provider === "youtube") {
-    /*
-     * Les identifiants YouTube classiques font 11 caractères.
-     */
     return /^[A-Za-z0-9_-]{11}$/.test(
       videoId,
     );
   }
 
   if (provider === "vimeo") {
-    /*
-     * Les identifiants Vimeo sont numériques.
-     * On reste volontairement souple sur la longueur
-     * afin de rester compatible avec les IDs existants/futurs.
-     */
     return /^\d{5,20}$/.test(
       videoId,
     );
@@ -1484,10 +1523,6 @@ function doesVideoUrlMatchProviderAndId(
         hostname ===
           "youtube-nocookie.com"
       ) {
-        /*
-         * URL classique :
-         * https://youtube.com/watch?v=ID
-         */
         const queryId =
           url.searchParams.get(
             "v",
@@ -1500,12 +1535,6 @@ function doesVideoUrlMatchProviderAndId(
           return true;
         }
 
-        /*
-         * Formats :
-         * /embed/ID
-         * /shorts/ID
-         * /live/ID
-         */
         const parts =
           url.pathname
             .split("/")
@@ -1560,6 +1589,12 @@ function doesVideoUrlMatchProviderAndId(
   }
 }
 
+/**
+ * ============================================================================
+ * MARKS / FORMATAGE
+ * ============================================================================
+ */
+
 function validateDescriptionMarks(
   marks: unknown,
   nodeType: string,
@@ -1573,9 +1608,6 @@ function validateDescriptionMarks(
     };
   }
 
-  /*
-   * Les marques sont réservées au texte.
-   */
   if (
     nodeType !== "text"
   ) {
@@ -1634,10 +1666,6 @@ function validateDescriptionMarks(
       continue;
     }
 
-    /*
-     * bold / italic / strike / code
-     * ne doivent pas transporter d'attributs.
-     */
     if (
       mark.attrs !==
         undefined &&
@@ -1745,9 +1773,11 @@ function validateDescriptionLinkMark(
   };
 }
 
-// ============================================================================
-// COURSE STATUS
-// ============================================================================
+/**
+ * ============================================================================
+ * COURSE STATUS
+ * ============================================================================
+ */
 
 function toPrismaCourseStatus(
   status: string,
@@ -1782,9 +1812,11 @@ function fromPrismaCourseStatus(
   }
 }
 
-// ============================================================================
-// MONEY
-// ============================================================================
+/**
+ * ============================================================================
+ * MONEY
+ * ============================================================================
+ */
 
 function parseMoney(
   value: unknown,
@@ -1851,9 +1883,11 @@ function isEmptyMoneyValue(
   );
 }
 
-// ============================================================================
-// JSON
-// ============================================================================
+/**
+ * ============================================================================
+ * JSON
+ * ============================================================================
+ */
 
 function isPlainObject(
   value: unknown,
@@ -1882,9 +1916,11 @@ function isPlainObject(
   );
 }
 
-// ============================================================================
-// STRING
-// ============================================================================
+/**
+ * ============================================================================
+ * STRING
+ * ============================================================================
+ */
 
 function cleanString(
   value: unknown,
@@ -1895,9 +1931,11 @@ function cleanString(
     : "";
 }
 
-// ============================================================================
-// URL
-// ============================================================================
+/**
+ * ============================================================================
+ * URL
+ * ============================================================================
+ */
 
 function isValidHttpUrl(
   value: string,
@@ -1933,9 +1971,11 @@ function isValidHttpsUrl(
   }
 }
 
-// ============================================================================
-// URL PRIVÉE
-// ============================================================================
+/**
+ * ============================================================================
+ * URL PRIVÉE
+ * ============================================================================
+ */
 
 function isSecurePrivateUrl(
   value: string,
@@ -1951,9 +1991,6 @@ function isSecurePrivateUrl(
       return true;
     }
 
-    /*
-     * Développement local uniquement.
-     */
     return (
       url.protocol ===
         "http:" &&
@@ -1971,9 +2008,11 @@ function isSecurePrivateUrl(
   }
 }
 
-// ============================================================================
-// PAGINATION
-// ============================================================================
+/**
+ * ============================================================================
+ * PAGINATION
+ * ============================================================================
+ */
 
 function parsePositiveInteger(
   value: string | null,
@@ -1998,9 +2037,11 @@ function parsePositiveInteger(
   return parsed;
 }
 
-// ============================================================================
-// REQUEST
-// ============================================================================
+/**
+ * ============================================================================
+ * REQUEST
+ * ============================================================================
+ */
 
 function isJsonRequest(
   request: Request,
@@ -2015,9 +2056,11 @@ function isJsonRequest(
   );
 }
 
-// ============================================================================
-// RESPONSES
-// ============================================================================
+/**
+ * ============================================================================
+ * RESPONSES
+ * ============================================================================
+ */
 
 function validationError(
   field: string,
