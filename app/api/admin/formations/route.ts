@@ -18,18 +18,26 @@ const MAX_PRIVATE_ACCESS_URL_LENGTH = 2_048;
 
 /*
  * Limites de sécurité du document enrichi.
- *
- * Elles empêchent qu'un navigateur compromis envoie
- * un document JSON démesuré ou excessivement imbriqué.
  */
 const MAX_DESCRIPTION_CONTENT_DEPTH = 20;
 const MAX_DESCRIPTION_CONTENT_NODES = 5_000;
 const MAX_DESCRIPTION_TEXT_NODE_LENGTH = 50_000;
 const MAX_DESCRIPTION_LINK_LENGTH = 2_048;
+
 const MAX_DESCRIPTION_IMAGE_ID_LENGTH = 191;
 const MAX_DESCRIPTION_IMAGE_URL_LENGTH = 4_096;
 const MAX_DESCRIPTION_IMAGE_ALT_LENGTH = 300;
 const MAX_DESCRIPTION_IMAGE_TITLE_LENGTH = 300;
+
+/*
+ * Vidéos publiques de démonstration.
+ *
+ * Elles sont enregistrées uniquement sous forme de données structurées.
+ * Aucun HTML / iframe fourni par le navigateur n'est accepté.
+ */
+const MAX_DESCRIPTION_VIDEO_ID_LENGTH = 191;
+const MAX_DESCRIPTION_VIDEO_URL_LENGTH = 2_048;
+const MAX_DESCRIPTION_VIDEO_TITLE_LENGTH = 300;
 
 const ALLOWED_CURRENCIES = new Set([
   "XOF",
@@ -37,38 +45,45 @@ const ALLOWED_CURRENCIES = new Set([
   "USD",
 ]);
 
+const ALLOWED_VIDEO_PROVIDERS = new Set([
+  "youtube",
+  "vimeo",
+]);
+
 /*
  * Types de nœuds autorisés dans le document TipTap.
  *
- * Le backend reste volontairement restrictif :
- * aucun HTML brut, script, iframe ou nœud arbitraire.
+ * IMPORTANT :
+ * - aucun HTML arbitraire ;
+ * - aucun script ;
+ * - aucun iframe brut ;
+ * - les vidéos passent exclusivement par le nœud "video".
  */
-const ALLOWED_DESCRIPTION_NODE_TYPES =
-  new Set([
-    "doc",
-    "paragraph",
-    "text",
-    "heading",
-    "bulletList",
-    "orderedList",
-    "listItem",
-    "blockquote",
-    "hardBreak",
-    "horizontalRule",
-    "image",
-  ]);
+const ALLOWED_DESCRIPTION_NODE_TYPES = new Set([
+  "doc",
+  "paragraph",
+  "text",
+  "heading",
+  "bulletList",
+  "orderedList",
+  "listItem",
+  "blockquote",
+  "hardBreak",
+  "horizontalRule",
+  "image",
+  "video",
+]);
 
 /*
  * Marques de texte autorisées.
  */
-const ALLOWED_DESCRIPTION_MARK_TYPES =
-  new Set([
-    "bold",
-    "italic",
-    "strike",
-    "code",
-    "link",
-  ]);
+const ALLOWED_DESCRIPTION_MARK_TYPES = new Set([
+  "bold",
+  "italic",
+  "strike",
+  "code",
+  "link",
+]);
 
 type CreateFormationBody = {
   title?: unknown;
@@ -85,9 +100,6 @@ type CreateFormationBody = {
 
   /*
    * Document structuré TipTap.
-   *
-   * Facultatif afin de conserver la compatibilité
-   * avec les formulaires et formations existants.
    */
   descriptionContent?: unknown;
 
@@ -116,6 +128,15 @@ type DescriptionValidationResult =
       message: string;
     };
 
+type DescriptionNodeValidationResult =
+  | {
+      ok: true;
+    }
+  | {
+      ok: false;
+      message: string;
+    };
+
 type DescriptionValidationState = {
   nodeCount: number;
   textLength: number;
@@ -132,9 +153,6 @@ type DescriptionValidationState = {
  * Même dans cette liste admin, on ne retourne pas :
  * - privateAccessUrl
  * - privatePdfPath
- *
- * Ces informations sensibles seront récupérées uniquement depuis
- * les routes administratives dédiées au détail d'une formation.
  *
  * descriptionContent n'est volontairement pas retourné ici :
  * la liste administrative n'a pas besoin de charger le document
@@ -393,20 +411,13 @@ export async function GET(request: Request) {
  * - exige une session administrateur ;
  * - exige un corps JSON ;
  * - valide toutes les données côté serveur ;
- * - conserve une description texte compatible avec l'ancien système ;
- * - accepte facultativement une description enrichie structurée ;
- * - valide strictement le document enrichi ;
+ * - conserve la description texte ;
+ * - accepte la description TipTap structurée ;
+ * - accepte les images de description ;
+ * - accepte les vidéos publiques YouTube/Vimeo ;
  * - n'accepte jamais de HTML arbitraire ;
- * - enregistre éventuellement le lien privé ;
- * - ne traite jamais directement le fichier PDF ;
- * - ne traite jamais directement les images ;
+ * - conserve le contenu privé séparé ;
  * - ne fait confiance à aucune donnée venant du navigateur.
- *
- * Les images de présentation et de description sont envoyées
- * séparément vers la route dédiée après création de la formation.
- *
- * Le PDF est envoyé séparément vers son bucket Supabase privé
- * après création de la formation.
  */
 export async function POST(request: Request) {
   const session =
@@ -507,15 +518,6 @@ export async function POST(request: Request) {
     );
   }
 
-  /*
-   * La description texte reste obligatoire.
-   *
-   * Même lorsque l'éditeur enrichi sera actif,
-   * FormationForm générera cette version texte.
-   *
-   * Cela préserve la compatibilité avec les anciennes
-   * pages et permet de disposer d'un fallback propre.
-   */
   if (
     description.length < 30 ||
     description.length >
@@ -643,13 +645,6 @@ export async function POST(request: Request) {
     );
   }
 
-  /*
-   * En production, on exige HTTPS pour éviter de délivrer
-   * aux clients un lien non chiffré.
-   *
-   * localhost reste autorisé afin de ne pas gêner
-   * le développement local.
-   */
   if (
     privateAccessUrl &&
     !isSecurePrivateUrl(
@@ -679,12 +674,6 @@ export async function POST(request: Request) {
 
           description,
 
-          /*
-           * null = ancienne description texte uniquement.
-           *
-           * Le champ reste facultatif afin que les formations
-           * existantes continuent de fonctionner normalement.
-           */
           descriptionContent:
             descriptionContent === null
               ? Prisma.JsonNull
@@ -704,12 +693,6 @@ export async function POST(request: Request) {
               ? now
               : null,
 
-          /*
-           * Information confidentielle.
-           *
-           * Elle reste dans Course mais n'est jamais retournée
-           * par le GET de cette route.
-           */
           privateAccessUrl:
             privateAccessUrl ||
             null,
@@ -720,11 +703,6 @@ export async function POST(request: Request) {
           title: true,
           status: true,
 
-          /*
-           * Ces valeurs ne seront pas renvoyées directement.
-           * Elles servent uniquement à construire les booléens
-           * de présence ci-dessous.
-           */
           privatePdfPath: true,
           privateAccessUrl: true,
 
@@ -754,10 +732,6 @@ export async function POST(request: Request) {
               course.status,
             ),
 
-          /*
-           * On ne renvoie PAS les valeurs confidentielles.
-           * Seulement leur présence.
-           */
           deliveryContent: {
             hasPdf:
               Boolean(
@@ -798,19 +772,16 @@ export async function POST(request: Request) {
 /**
  * Valide le document JSON produit par l'éditeur.
  *
- * Le serveur ne fait jamais confiance au JSON envoyé par le navigateur.
- *
- * Règles principales :
- * - undefined / null : accepté pour les anciennes formations ;
- * - racine obligatoirement de type "doc" ;
- * - liste blanche de nœuds ;
- * - liste blanche de marques ;
+ * Règles :
+ * - racine obligatoirement "doc" ;
+ * - liste blanche stricte de nœuds ;
+ * - liste blanche stricte de marques ;
  * - aucun HTML brut ;
  * - profondeur limitée ;
  * - nombre de nœuds limité ;
- * - volume de texte limité ;
- * - liens HTTP(S) uniquement ;
- * - images limitées aux attributs attendus.
+ * - volume texte limité ;
+ * - images HTTPS ;
+ * - vidéos exclusivement YouTube/Vimeo.
  */
 function validateDescriptionContent(
   value: unknown,
@@ -860,13 +831,6 @@ function validateDescriptionContent(
 
   return {
     ok: true,
-
-    /*
-     * value a déjà été contrôlé récursivement.
-     *
-     * On conserve sa structure JSON afin que TipTap puisse
-     * la recharger sans transformation destructive.
-     */
     value,
   };
 }
@@ -875,14 +839,7 @@ function validateDescriptionNode(
   node: Record<string, unknown>,
   depth: number,
   state: DescriptionValidationState,
-):
-  | {
-      ok: true;
-    }
-  | {
-      ok: false;
-      message: string;
-    } {
+): DescriptionNodeValidationResult {
   if (
     depth >
     MAX_DESCRIPTION_CONTENT_DEPTH
@@ -967,9 +924,6 @@ function validateDescriptionNode(
   } else if (
     node.text !== undefined
   ) {
-    /*
-     * Seuls les nœuds "text" peuvent posséder "text".
-     */
     return {
       ok: false,
       message:
@@ -978,7 +932,7 @@ function validateDescriptionNode(
   }
 
   /*
-   * Validation des attributs selon le type de nœud.
+   * Validation des attributs.
    */
   const attrsResult =
     validateDescriptionNodeAttributes(
@@ -991,7 +945,7 @@ function validateDescriptionNode(
   }
 
   /*
-   * Validation des marques de texte.
+   * Validation des marques.
    */
   const marksResult =
     validateDescriptionMarks(
@@ -1004,7 +958,7 @@ function validateDescriptionNode(
   }
 
   /*
-   * Validation récursive du contenu enfant.
+   * Validation récursive.
    */
   if (
     node.content !==
@@ -1059,26 +1013,27 @@ function validateDescriptionNode(
 function validateDescriptionNodeAttributes(
   type: string,
   attrs: unknown,
-):
-  | {
-      ok: true;
-    }
-  | {
-      ok: false;
-      message: string;
-    } {
+): DescriptionNodeValidationResult {
   if (
     attrs === undefined ||
     attrs === null
   ) {
     /*
-     * Les images ont besoin d'une source.
+     * Images et vidéos nécessitent obligatoirement leurs attributs.
      */
     if (type === "image") {
       return {
         ok: false,
         message:
           "Une image de la description est incomplète.",
+      };
+    }
+
+    if (type === "video") {
+      return {
+        ok: false,
+        message:
+          "Une vidéo de la description est incomplète.",
       };
     }
 
@@ -1150,11 +1105,15 @@ function validateDescriptionNodeAttributes(
     );
   }
 
+  if (type === "video") {
+    return validateDescriptionVideoAttributes(
+      attrs,
+    );
+  }
+
   /*
    * Pour les autres nœuds actuellement supportés,
    * aucun attribut métier n'est nécessaire.
-   *
-   * TipTap peut cependant envoyer un objet attrs vide.
    */
   if (
     Object.keys(attrs).length >
@@ -1173,30 +1132,8 @@ function validateDescriptionNodeAttributes(
 }
 
 function validateDescriptionImageAttributes(
-  attrs: Record<
-    string,
-    unknown
-  >,
-):
-  | {
-      ok: true;
-    }
-  | {
-      ok: false;
-      message: string;
-    } {
-  /*
-   * L'éditeur pourra stocker :
-   * - src       : URL publique Supabase ;
-   * - imageId   : identifiant CourseDescriptionImage ;
-   * - alt       : texte alternatif ;
-   * - title     : légende/titre facultatif.
-   *
-   * Une image temporaire locale ne doit jamais arriver
-   * jusqu'à cette API : FormationForm devra d'abord
-   * l'envoyer vers la route d'upload.
-   */
-
+  attrs: Record<string, unknown>,
+): DescriptionNodeValidationResult {
   const allowedKeys =
     new Set([
       "src",
@@ -1311,17 +1248,322 @@ function validateDescriptionImageAttributes(
   };
 }
 
+/**
+ * ============================================================================
+ * VIDÉOS PUBLIQUES DE DÉMONSTRATION
+ * ============================================================================
+ *
+ * Format attendu :
+ *
+ * {
+ *   type: "video",
+ *   attrs: {
+ *     provider: "youtube" | "vimeo",
+ *     videoId: "...",
+ *     videoUrl: "https://...",
+ *     videoTitle: "..."
+ *   }
+ * }
+ *
+ * Le serveur :
+ * - refuse les providers inconnus ;
+ * - refuse les attributs arbitraires ;
+ * - vérifie l'ID ;
+ * - vérifie l'URL ;
+ * - vérifie que l'URL correspond réellement au provider et à l'ID ;
+ * - n'accepte aucun iframe ou HTML.
+ */
+function validateDescriptionVideoAttributes(
+  attrs: Record<string, unknown>,
+): DescriptionNodeValidationResult {
+  const allowedKeys =
+    new Set([
+      "provider",
+      "videoId",
+      "videoUrl",
+      "videoTitle",
+    ]);
+
+  for (
+    const key of
+    Object.keys(attrs)
+  ) {
+    if (
+      !allowedKeys.has(
+        key,
+      )
+    ) {
+      return {
+        ok: false,
+        message:
+          "Une vidéo de la description contient un attribut non autorisé.",
+      };
+    }
+  }
+
+  const provider =
+    cleanString(
+      attrs.provider,
+    ).toLowerCase();
+
+  const videoId =
+    cleanString(
+      attrs.videoId,
+    );
+
+  const videoUrl =
+    cleanString(
+      attrs.videoUrl,
+    );
+
+  const videoTitle =
+    cleanString(
+      attrs.videoTitle,
+    );
+
+  if (
+    !provider ||
+    !ALLOWED_VIDEO_PROVIDERS.has(
+      provider,
+    )
+  ) {
+    return {
+      ok: false,
+      message:
+        "Le fournisseur de la vidéo est invalide. Seules les vidéos YouTube et Vimeo sont autorisées.",
+    };
+  }
+
+  if (
+    !videoId ||
+    videoId.length >
+      MAX_DESCRIPTION_VIDEO_ID_LENGTH
+  ) {
+    return {
+      ok: false,
+      message:
+        "L'identifiant de la vidéo est invalide.",
+    };
+  }
+
+  if (
+    !isSafeVideoId(
+      provider,
+      videoId,
+    )
+  ) {
+    return {
+      ok: false,
+      message:
+        "L'identifiant de la vidéo n'est pas valide.",
+    };
+  }
+
+  if (
+    !videoUrl ||
+    videoUrl.length >
+      MAX_DESCRIPTION_VIDEO_URL_LENGTH
+  ) {
+    return {
+      ok: false,
+      message:
+        "L'adresse de la vidéo est invalide.",
+    };
+  }
+
+  if (
+    !isValidHttpsUrl(
+      videoUrl,
+    )
+  ) {
+    return {
+      ok: false,
+      message:
+        "L'adresse de la vidéo doit être une adresse HTTPS valide.",
+    };
+  }
+
+  if (
+    videoTitle.length >
+    MAX_DESCRIPTION_VIDEO_TITLE_LENGTH
+  ) {
+    return {
+      ok: false,
+      message:
+        "Le titre de la vidéo est trop long.",
+    };
+  }
+
+  if (
+    !doesVideoUrlMatchProviderAndId(
+      provider,
+      videoId,
+      videoUrl,
+    )
+  ) {
+    return {
+      ok: false,
+      message:
+        "L'adresse de la vidéo ne correspond pas au fournisseur ou à l'identifiant indiqué.",
+    };
+  }
+
+  return {
+    ok: true,
+  };
+}
+
+function isSafeVideoId(
+  provider: string,
+  videoId: string,
+) {
+  if (provider === "youtube") {
+    /*
+     * Les identifiants YouTube classiques font 11 caractères.
+     */
+    return /^[A-Za-z0-9_-]{11}$/.test(
+      videoId,
+    );
+  }
+
+  if (provider === "vimeo") {
+    /*
+     * Les identifiants Vimeo sont numériques.
+     * On reste volontairement souple sur la longueur
+     * afin de rester compatible avec les IDs existants/futurs.
+     */
+    return /^\d{5,20}$/.test(
+      videoId,
+    );
+  }
+
+  return false;
+}
+
+function doesVideoUrlMatchProviderAndId(
+  provider: string,
+  videoId: string,
+  videoUrl: string,
+) {
+  try {
+    const url =
+      new URL(videoUrl);
+
+    const hostname =
+      url.hostname
+        .toLowerCase()
+        .replace(/^www\./, "");
+
+    if (
+      provider ===
+      "youtube"
+    ) {
+      if (
+        hostname ===
+        "youtu.be"
+      ) {
+        const pathId =
+          url.pathname
+            .split("/")
+            .filter(Boolean)[0] ??
+          "";
+
+        return (
+          pathId ===
+          videoId
+        );
+      }
+
+      if (
+        hostname ===
+          "youtube.com" ||
+        hostname ===
+          "m.youtube.com" ||
+        hostname ===
+          "music.youtube.com" ||
+        hostname ===
+          "youtube-nocookie.com"
+      ) {
+        /*
+         * URL classique :
+         * https://youtube.com/watch?v=ID
+         */
+        const queryId =
+          url.searchParams.get(
+            "v",
+          );
+
+        if (
+          queryId ===
+          videoId
+        ) {
+          return true;
+        }
+
+        /*
+         * Formats :
+         * /embed/ID
+         * /shorts/ID
+         * /live/ID
+         */
+        const parts =
+          url.pathname
+            .split("/")
+            .filter(Boolean);
+
+        if (
+          parts.length >= 2 &&
+          (
+            parts[0] ===
+              "embed" ||
+            parts[0] ===
+              "shorts" ||
+            parts[0] ===
+              "live"
+          ) &&
+          parts[1] ===
+            videoId
+        ) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    if (
+      provider ===
+      "vimeo"
+    ) {
+      if (
+        hostname !==
+          "vimeo.com" &&
+        hostname !==
+          "player.vimeo.com"
+      ) {
+        return false;
+      }
+
+      const parts =
+        url.pathname
+          .split("/")
+          .filter(Boolean);
+
+      return parts.includes(
+        videoId,
+      );
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function validateDescriptionMarks(
   marks: unknown,
   nodeType: string,
-):
-  | {
-      ok: true;
-    }
-  | {
-      ok: false;
-      message: string;
-    } {
+): DescriptionNodeValidationResult {
   if (
     marks === undefined ||
     marks === null
@@ -1424,18 +1666,8 @@ function validateDescriptionMarks(
 }
 
 function validateDescriptionLinkMark(
-  mark: Record<
-    string,
-    unknown
-  >,
-):
-  | {
-      ok: true;
-    }
-  | {
-      ok: false;
-      message: string;
-    } {
+  mark: Record<string, unknown>,
+): DescriptionNodeValidationResult {
   if (
     !isPlainObject(
       mark.attrs,
