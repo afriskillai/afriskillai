@@ -56,6 +56,7 @@ export const ModelName = {
   Course: 'Course',
   CourseImage: 'CourseImage',
   CourseDescriptionImage: 'CourseDescriptionImage',
+  CourseFile: 'CourseFile',
   CourseModule: 'CourseModule',
   Lesson: 'Lesson',
   Order: 'Order',
@@ -161,6 +162,22 @@ export const CourseDescriptionImageScalarFieldEnum = {
 } as const
 
 export type CourseDescriptionImageScalarFieldEnum = (typeof CourseDescriptionImageScalarFieldEnum)[keyof typeof CourseDescriptionImageScalarFieldEnum]
+
+
+export const CourseFileScalarFieldEnum = {
+  id: 'id',
+  courseId: 'courseId',
+  type: 'type',
+  name: 'name',
+  path: 'path',
+  size: 'size',
+  mimeType: 'mimeType',
+  position: 'position',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type CourseFileScalarFieldEnum = (typeof CourseFileScalarFieldEnum)[keyof typeof CourseFileScalarFieldEnum]
 
 
 export const CourseModuleScalarFieldEnum = {

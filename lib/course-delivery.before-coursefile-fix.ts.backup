@@ -390,6 +390,10 @@ async function getPaidOrderForDelivery(
                * On ne livre que les fichiers actifs.
                */
               files: {
+                where: {
+                  isActive: true,
+                },
+
                 orderBy: [
                   {
                     position: "asc",
@@ -403,7 +407,7 @@ async function getPaidOrderForDelivery(
                   id: true,
                   type: true,
                   name: true,
-                  path: true,
+                  storagePath: true,
                   mimeType: true,
                   size: true,
                   position: true,
@@ -1771,5 +1775,3 @@ export async function getOrderDeliveryStatus(
       ),
   };
 }
-
-

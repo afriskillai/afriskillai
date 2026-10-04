@@ -23,16 +23,19 @@ import { Resend } from "resend";
  * - envoie également une version texte ;
  * - affiche le logo AfriSkill AI ;
  * - fournit le lien privé de la formation ;
- * - fournit éventuellement un lien temporaire sécurisé vers le PDF ;
+ * - prend en charge plusieurs fichiers privés ;
+ * - prend en charge PDF, Word, ZIP et autres ressources autorisées ;
+ * - conserve la compatibilité avec l'ancien champ `pdf` ;
  * - retourne l'identifiant Resend du message ;
  * - ne confirme JAMAIS lui-même un paiement ;
- * - ne lit jamais privatePdfPath directement ;
+ * - ne lit jamais directement un chemin privé Supabase ;
  * - ne doit être appelé qu'après validation serveur du paiement.
  *
  * IMPORTANT :
  *
- * Le PDF reçu ici doit déjà avoir été transformé en URL temporaire
- * sécurisée par le service de stockage privé.
+ * Tous les fichiers reçus ici doivent déjà avoir été transformés
+ * en URL HTTPS temporaire et sécurisée par le service de stockage privé.
+ *
  * ============================================================================
  */
 
@@ -42,8 +45,7 @@ import { Resend } from "resend";
  * ============================================================================
  */
 
-const BRAND_NAME =
-  "AfriSkill AI";
+const BRAND_NAME = "AfriSkill AI";
 
 const DEFAULT_APP_URL =
   "https://afriskill-ai.com";
@@ -69,28 +71,84 @@ const MAX_TITLE_LENGTH =
 const MAX_REFERENCE_LENGTH =
   200;
 
+const MAX_FILENAME_LENGTH =
+  180;
+
+const MAX_FILES_PER_EMAIL =
+  100;
+
 /**
  * ============================================================================
  * TYPES
  * ============================================================================
  */
 
+/**
+ * Types fonctionnels supportés par l'e-mail.
+ *
+ * Les valeurs correspondent à l'architecture CourseFile.
+ * OTHER permet de rester robuste si un nouveau type de fichier
+ * est introduit ultérieurement.
+ */
+export type CourseDeliveryEmailFileType =
+  | "PDF"
+  | "WORD"
+  | "ZIP"
+  | "OTHER";
+
+/**
+ * Ancien contrat conservé pour rétrocompatibilité.
+ */
 export type CourseDeliveryEmailAttachment = {
   /**
    * Nom présenté au client.
-   *
-   * Exemple :
-   * Formation-AfriSkill-AI.pdf
    */
   filename: string;
 
   /**
    * URL HTTPS temporaire et sécurisée.
-   *
-   * Cette URL doit être générée par le service
-   * de stockage privé.
    */
   url: string;
+};
+
+/**
+ * Nouveau contrat multi-fichiers.
+ */
+export type CourseDeliveryEmailFile = {
+  /**
+   * Identifiant éventuel de la ressource.
+   */
+  id?: string;
+
+  /**
+   * Type fonctionnel.
+   */
+  type: CourseDeliveryEmailFileType;
+
+  /**
+   * Nom présenté au client.
+   */
+  filename: string;
+
+  /**
+   * URL HTTPS temporaire et sécurisée.
+   */
+  url: string;
+
+  /**
+   * Taille éventuelle en octets.
+   */
+  size?: number | null;
+
+  /**
+   * MIME type éventuel.
+   */
+  mimeType?: string | null;
+
+  /**
+   * Position d'affichage.
+   */
+  position?: number;
 };
 
 export type CourseDeliveryEmailInput = {
@@ -121,11 +179,17 @@ export type CourseDeliveryEmailInput = {
   privateAccessUrl?: string | null;
 
   /**
-   * PDF sécurisé.
+   * Nouveau système multi-fichiers.
    *
-   * Il ne s'agit PAS du privatePdfPath Supabase.
+   * Ces URLs doivent déjà être temporaires et sécurisées.
+   */
+  files?: CourseDeliveryEmailFile[] | null;
+
+  /**
+   * Ancien système mono-PDF.
    *
-   * Il s'agit d'une URL temporaire déjà générée.
+   * Conservé temporairement pour assurer la rétrocompatibilité
+   * avec les formations ou appels existants.
    */
   pdf?: CourseDeliveryEmailAttachment | null;
 };
@@ -523,15 +587,16 @@ function getCustomerDisplayName({
 
 /**
  * ============================================================================
- * NOM DU PDF
+ * FICHIERS
  * ============================================================================
  */
 
-function normalizePdfFilename(
+function normalizeFilename(
   filename:
     | string
     | null
     | undefined,
+  fallback = "ressource-afriskill-ai",
 ): string {
   const normalized =
     normalizeText(
@@ -539,7 +604,7 @@ function normalizePdfFilename(
     );
 
   if (!normalized) {
-    return "formation-afriskill-ai.pdf";
+    return fallback;
   }
 
   const cleaned =
@@ -559,12 +624,23 @@ function normalizePdfFilename(
       .trim()
       .slice(
         0,
-        180,
+        MAX_FILENAME_LENGTH,
       );
 
-  if (!cleaned) {
-    return "formation-afriskill-ai.pdf";
-  }
+  return cleaned || fallback;
+}
+
+function normalizePdfFilename(
+  filename:
+    | string
+    | null
+    | undefined,
+): string {
+  const cleaned =
+    normalizeFilename(
+      filename,
+      "formation-afriskill-ai.pdf",
+    );
 
   return cleaned
     .toLowerCase()
@@ -573,28 +649,171 @@ function normalizePdfFilename(
     : `${cleaned}.pdf`;
 }
 
+function normalizeFileType(
+  value:
+    | string
+    | null
+    | undefined,
+): CourseDeliveryEmailFileType {
+  const normalized =
+    normalizeText(value)
+      ?.toUpperCase();
+
+  if (
+    normalized === "PDF" ||
+    normalized === "WORD" ||
+    normalized === "ZIP"
+  ) {
+    return normalized;
+  }
+
+  return "OTHER";
+}
+
+function normalizeFilePosition(
+  value:
+    | number
+    | null
+    | undefined,
+  fallback: number,
+): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value)
+  ) {
+    return fallback;
+  }
+
+  return Math.max(
+    0,
+    Math.trunc(value),
+  );
+}
+
+function normalizeFileSize(
+  value:
+    | number
+    | null
+    | undefined,
+): number | null {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < 0
+  ) {
+    return null;
+  }
+
+  return Math.trunc(value);
+}
+
+function formatFileSize(
+  size:
+    | number
+    | null
+    | undefined,
+): string | null {
+  if (
+    typeof size !== "number" ||
+    !Number.isFinite(size) ||
+    size < 0
+  ) {
+    return null;
+  }
+
+  if (size < 1024) {
+    return `${size} octets`;
+  }
+
+  if (size < 1024 * 1024) {
+    return `${(
+      size / 1024
+    ).toFixed(1)} Ko`;
+  }
+
+  if (
+    size <
+    1024 * 1024 * 1024
+  ) {
+    return `${(
+      size /
+      (1024 * 1024)
+    ).toFixed(1)} Mo`;
+  }
+
+  return `${(
+    size /
+    (1024 * 1024 * 1024)
+  ).toFixed(2)} Go`;
+}
+
+function getFileTypeLabel(
+  type: CourseDeliveryEmailFileType,
+): string {
+  switch (type) {
+    case "PDF":
+      return "PDF";
+
+    case "WORD":
+      return "WORD";
+
+    case "ZIP":
+      return "ZIP";
+
+    default:
+      return "FICHIER";
+  }
+}
+
+function getFileActionLabel(
+  type: CourseDeliveryEmailFileType,
+): string {
+  switch (type) {
+    case "PDF":
+      return "Ouvrir le PDF";
+
+    case "WORD":
+      return "Télécharger";
+
+    case "ZIP":
+      return "Télécharger";
+
+    default:
+      return "Télécharger";
+  }
+}
+
 /**
  * ============================================================================
  * DONNÉES NORMALISÉES
  * ============================================================================
  */
 
+type NormalizedDeliveryEmailFile = {
+  id: string | null;
+  type: CourseDeliveryEmailFileType;
+  filename: string;
+  url: string;
+  size: number | null;
+  mimeType: string | null;
+  position: number;
+};
+
 type NormalizedDeliveryEmailInput = {
   recipientEmail: string;
+
   customerDisplayName: string;
+
   orderReference: string;
+
   courseTitle: string;
 
   privateAccessUrl:
     | string
     | null;
 
-  pdf:
-    | {
-        filename: string;
-        url: string;
-      }
-    | null;
+  files:
+    NormalizedDeliveryEmailFile[];
 };
 
 function normalizeInput(
@@ -643,17 +862,121 @@ function normalizeInput(
       input.privateAccessUrl,
     );
 
-  let pdf:
-    NormalizedDeliveryEmailInput["pdf"] =
-    null;
+  if (
+    input.privateAccessUrl &&
+    !privateAccessUrl
+  ) {
+    throw new CourseDeliveryEmailError({
+      code:
+        "EMAIL_INPUT_INVALID",
 
+      message:
+        "Le lien privé de la formation est invalide.",
+    });
+  }
+
+  const normalizedFiles:
+    NormalizedDeliveryEmailFile[] =
+    [];
+
+  const incomingFiles =
+    Array.isArray(
+      input.files,
+    )
+      ? input.files
+      : [];
+
+  if (
+    incomingFiles.length >
+    MAX_FILES_PER_EMAIL
+  ) {
+    throw new CourseDeliveryEmailError({
+      code:
+        "EMAIL_INPUT_INVALID",
+
+      message:
+        `Le nombre de fichiers dépasse la limite autorisée de ${MAX_FILES_PER_EMAIL}.`,
+    });
+  }
+
+  for (
+    let index = 0;
+    index < incomingFiles.length;
+    index += 1
+  ) {
+    const file =
+      incomingFiles[index];
+
+    if (!file) {
+      continue;
+    }
+
+    const fileUrl =
+      normalizeHttpsUrl(
+        file.url,
+      );
+
+    if (!fileUrl) {
+      throw new CourseDeliveryEmailError({
+        code:
+          "EMAIL_INPUT_INVALID",
+
+        message:
+          `L'URL temporaire du fichier n°${index + 1} est invalide.`,
+      });
+    }
+
+    normalizedFiles.push({
+      id:
+        normalizeText(
+          file.id,
+        ),
+
+      type:
+        normalizeFileType(
+          file.type,
+        ),
+
+      filename:
+        normalizeFilename(
+          file.filename,
+          `ressource-${index + 1}`,
+        ),
+
+      url:
+        fileUrl,
+
+      size:
+        normalizeFileSize(
+          file.size,
+        ),
+
+      mimeType:
+        normalizeText(
+          file.mimeType,
+        ),
+
+      position:
+        normalizeFilePosition(
+          file.position,
+          index,
+        ),
+    });
+  }
+
+  /**
+   * Compatibilité avec l'ancien système.
+   *
+   * Si `pdf` est encore envoyé par un ancien appel,
+   * il est converti automatiquement en ressource PDF.
+   */
   if (input.pdf) {
-    const pdfUrl =
+    const legacyPdfUrl =
       normalizeHttpsUrl(
         input.pdf.url,
       );
 
-    if (!pdfUrl) {
+    if (!legacyPdfUrl) {
       throw new CourseDeliveryEmailError({
         code:
           "EMAIL_INPUT_INVALID",
@@ -663,31 +986,95 @@ function normalizeInput(
       });
     }
 
-    pdf = {
-      filename:
-        normalizePdfFilename(
-          input.pdf.filename,
-        ),
+    const alreadyPresent =
+      normalizedFiles.some(
+        (file) =>
+          file.url ===
+          legacyPdfUrl,
+      );
 
-      url:
-        pdfUrl,
-    };
+    if (!alreadyPresent) {
+      normalizedFiles.push({
+        id:
+          null,
+
+        type:
+          "PDF",
+
+        filename:
+          normalizePdfFilename(
+            input.pdf.filename,
+          ),
+
+        url:
+          legacyPdfUrl,
+
+        size:
+          null,
+
+        mimeType:
+          "application/pdf",
+
+        position:
+          normalizedFiles.length,
+      });
+    }
   }
 
   /**
-   * Une livraison de formation doit contenir
-   * au minimum un accès utile.
+   * Suppression des doublons.
+   *
+   * Une même URL sécurisée ne doit pas apparaître
+   * plusieurs fois dans l'e-mail.
+   */
+  const uniqueFiles =
+    Array.from(
+      new Map(
+        normalizedFiles.map(
+          (file) => [
+            file.url,
+            file,
+          ],
+        ),
+      ).values(),
+    )
+      .sort(
+        (a, b) => {
+          if (
+            a.position !==
+            b.position
+          ) {
+            return (
+              a.position -
+              b.position
+            );
+          }
+
+          return a.filename
+            .localeCompare(
+              b.filename,
+              "fr",
+            );
+        },
+      );
+
+  /**
+   * Une livraison doit contenir au minimum :
+   *
+   * - un lien privé ;
+   * OU
+   * - au moins un fichier.
    */
   if (
     !privateAccessUrl &&
-    !pdf
+    uniqueFiles.length === 0
   ) {
     throw new CourseDeliveryEmailError({
       code:
         "EMAIL_DELIVERY_CONTENT_MISSING",
 
       message:
-        "Aucun lien privé ni PDF sécurisé n'est disponible pour cette formation.",
+        "Aucun lien privé ni fichier sécurisé n'est disponible pour cette formation.",
     });
   }
 
@@ -709,7 +1096,8 @@ function normalizeInput(
 
     privateAccessUrl,
 
-    pdf,
+    files:
+      uniqueFiles,
   };
 }
 
@@ -748,11 +1136,38 @@ function buildTextEmail(
     );
   }
 
-  if (input.pdf) {
+  if (
+    input.files.length > 0
+  ) {
     lines.push(
-      "PDF DE LA FORMATION",
-      input.pdf.url,
+      input.files.length === 1
+        ? "FICHIER DE LA FORMATION"
+        : "FICHIERS DE LA FORMATION",
       "",
+    );
+
+    input.files.forEach(
+      (file, index) => {
+        const size =
+          formatFileSize(
+            file.size,
+          );
+
+        lines.push(
+          `${index + 1}. [${getFileTypeLabel(file.type)}] ${file.filename}`,
+        );
+
+        if (size) {
+          lines.push(
+            `Taille : ${size}`,
+          );
+        }
+
+        lines.push(
+          `Télécharger : ${file.url}`,
+          "",
+        );
+      },
     );
   }
 
@@ -772,6 +1187,242 @@ function buildTextEmail(
   return lines.join(
     "\n",
   );
+}
+
+/**
+ * ============================================================================
+ * COMPOSANT HTML — FICHIERS
+ * ============================================================================
+ */
+
+function buildFilesHtml(
+  files:
+    NormalizedDeliveryEmailFile[],
+): string {
+  if (
+    files.length === 0
+  ) {
+    return "";
+  }
+
+  const cards =
+    files
+      .map(
+        (file) => {
+          const safeFilename =
+            escapeHtml(
+              file.filename,
+            );
+
+          const safeUrl =
+            escapeHtml(
+              file.url,
+            );
+
+          const typeLabel =
+            escapeHtml(
+              getFileTypeLabel(
+                file.type,
+              ),
+            );
+
+          const actionLabel =
+            escapeHtml(
+              getFileActionLabel(
+                file.type,
+              ),
+            );
+
+          const size =
+            formatFileSize(
+              file.size,
+            );
+
+          const safeSize =
+            size
+              ? escapeHtml(size)
+              : null;
+
+          return `
+            <tr>
+              <td
+                style="
+                  padding: 0 0 12px 0;
+                "
+              >
+                <table
+                  role="presentation"
+                  width="100%"
+                  cellspacing="0"
+                  cellpadding="0"
+                  border="0"
+                  style="
+                    width: 100%;
+                    border: 1px solid #dbe7f5;
+                    border-radius: 16px;
+                    background-color: #f4f8ff;
+                  "
+                >
+                  <tr>
+                    <td
+                      width="62"
+                      valign="middle"
+                      style="
+                        padding: 17px 0 17px 18px;
+                      "
+                    >
+                      <table
+                        role="presentation"
+                        cellspacing="0"
+                        cellpadding="0"
+                        border="0"
+                      >
+                        <tr>
+                          <td
+                            align="center"
+                            valign="middle"
+                            width="46"
+                            height="46"
+                            style="
+                              width: 46px;
+                              height: 46px;
+                              border-radius: 12px;
+                              background-color: #ffffff;
+                              color: #0759d9;
+                              font-size: 10px;
+                              line-height: 46px;
+                              font-weight: 900;
+                            "
+                          >
+                            ${typeLabel}
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+
+                    <td
+                      valign="middle"
+                      style="
+                        padding: 17px 10px;
+                      "
+                    >
+                      <p
+                        style="
+                          margin: 0;
+                          color: #0f2b5b;
+                          font-size: 14px;
+                          line-height: 20px;
+                          font-weight: 800;
+                          word-break: break-word;
+                        "
+                      >
+                        ${safeFilename}
+                      </p>
+
+                      <p
+                        style="
+                          margin: 4px 0 0 0;
+                          color: #64748b;
+                          font-size: 11px;
+                          line-height: 17px;
+                        "
+                      >
+                        ${typeLabel}${
+                          safeSize
+                            ? ` • ${safeSize}`
+                            : ""
+                        }
+                      </p>
+                    </td>
+
+                    <td
+                      align="right"
+                      valign="middle"
+                      style="
+                        padding: 17px 18px 17px 5px;
+                      "
+                    >
+                      <a
+                        href="${safeUrl}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style="
+                          display: inline-block;
+                          border: 1px solid #cddbf0;
+                          border-radius: 10px;
+                          background-color: #ffffff;
+                          padding: 10px 13px;
+                          color: #0759d9;
+                          font-size: 11px;
+                          line-height: 16px;
+                          font-weight: 800;
+                          text-decoration: none;
+                          white-space: nowrap;
+                        "
+                      >
+                        ${actionLabel}
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          `.trim();
+        },
+      )
+      .join("");
+
+  const title =
+    files.length === 1
+      ? "Votre fichier de formation"
+      : `Vos fichiers de formation — ${files.length} fichiers`;
+
+  return `
+    <tr>
+      <td
+        style="
+          padding: 24px 30px 0 30px;
+        "
+      >
+        <p
+          style="
+            margin: 0 0 7px 0;
+            color: #172033;
+            font-size: 16px;
+            line-height: 24px;
+            font-weight: 800;
+          "
+        >
+          ${escapeHtml(title)}
+        </p>
+
+        <p
+          style="
+            margin: 0 0 16px 0;
+            color: #64748b;
+            font-size: 13px;
+            line-height: 21px;
+          "
+        >
+          ${
+            files.length === 1
+              ? "Votre ressource est disponible ci-dessous."
+              : "Toutes les ressources associées à votre formation sont disponibles ci-dessous."
+          }
+        </p>
+
+        <table
+          role="presentation"
+          width="100%"
+          cellspacing="0"
+          cellpadding="0"
+          border="0"
+        >
+          ${cards}
+        </table>
+      </td>
+    </tr>
+  `.trim();
 }
 
 /**
@@ -830,19 +1481,10 @@ function buildHtmlEmail(
         )
       : null;
 
-  const safePdfUrl =
-    input.pdf
-      ? escapeHtml(
-          input.pdf.url,
-        )
-      : null;
-
-  const safePdfFilename =
-    input.pdf
-      ? escapeHtml(
-          input.pdf.filename,
-        )
-      : null;
+  const filesHtml =
+    buildFilesHtml(
+      input.files,
+    );
 
   return `
 <!doctype html>
@@ -913,10 +1555,6 @@ function buildHtmlEmail(
               margin: 0 auto;
             "
           >
-            <!-- =========================================================
-                 LOGO
-            ========================================================== -->
-
             <tr>
               <td
                 align="center"
@@ -951,10 +1589,6 @@ function buildHtmlEmail(
               </td>
             </tr>
 
-            <!-- =========================================================
-                 CARTE PRINCIPALE
-            ========================================================== -->
-
             <tr>
               <td
                 style="
@@ -966,7 +1600,6 @@ function buildHtmlEmail(
                 "
               >
                 <!-- HEADER -->
-
                 <table
                   role="presentation"
                   width="100%"
@@ -982,8 +1615,6 @@ function buildHtmlEmail(
                         background-color: #0f2b5b;
                       "
                     >
-                      <!-- CHECK -->
-
                       <table
                         role="presentation"
                         cellspacing="0"
@@ -1058,7 +1689,6 @@ function buildHtmlEmail(
                 </table>
 
                 <!-- CONTENU -->
-
                 <table
                   role="presentation"
                   width="100%"
@@ -1100,7 +1730,6 @@ function buildHtmlEmail(
                   </tr>
 
                   <!-- FORMATION -->
-
                   <tr>
                     <td
                       style="
@@ -1179,7 +1808,6 @@ function buildHtmlEmail(
                     safePrivateAccessUrl
                       ? `
                   <!-- LIEN PRIVÉ -->
-
                   <tr>
                     <td
                       style="
@@ -1251,136 +1879,9 @@ function buildHtmlEmail(
                       : ""
                   }
 
-                  ${
-                    safePdfUrl &&
-                    safePdfFilename
-                      ? `
-                  <!-- PDF -->
-
-                  <tr>
-                    <td
-                      style="
-                        padding: 18px 30px 0 30px;
-                      "
-                    >
-                      <table
-                        role="presentation"
-                        width="100%"
-                        cellspacing="0"
-                        cellpadding="0"
-                        border="0"
-                        style="
-                          width: 100%;
-                          border: 1px solid #dbe7f5;
-                          border-radius: 16px;
-                          background-color: #f4f8ff;
-                        "
-                      >
-                        <tr>
-                          <td
-                            width="54"
-                            valign="middle"
-                            style="
-                              padding: 17px 0 17px 18px;
-                            "
-                          >
-                            <table
-                              role="presentation"
-                              cellspacing="0"
-                              cellpadding="0"
-                              border="0"
-                            >
-                              <tr>
-                                <td
-                                  align="center"
-                                  valign="middle"
-                                  width="42"
-                                  height="42"
-                                  style="
-                                    width: 42px;
-                                    height: 42px;
-                                    border-radius: 12px;
-                                    background-color: #ffffff;
-                                    color: #0759d9;
-                                    font-size: 12px;
-                                    line-height: 42px;
-                                    font-weight: 900;
-                                  "
-                                >
-                                  PDF
-                                </td>
-                              </tr>
-                            </table>
-                          </td>
-
-                          <td
-                            valign="middle"
-                            style="
-                              padding: 17px 12px;
-                            "
-                          >
-                            <p
-                              style="
-                                margin: 0;
-                                color: #0f2b5b;
-                                font-size: 14px;
-                                line-height: 20px;
-                                font-weight: 800;
-                              "
-                            >
-                              PDF de votre formation
-                            </p>
-
-                            <p
-                              style="
-                                margin: 4px 0 0 0;
-                                color: #64748b;
-                                font-size: 11px;
-                                line-height: 17px;
-                              "
-                            >
-                              ${safePdfFilename}
-                            </p>
-                          </td>
-
-                          <td
-                            align="right"
-                            valign="middle"
-                            style="
-                              padding: 17px 18px 17px 5px;
-                            "
-                          >
-                            <a
-                              href="${safePdfUrl}"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style="
-                                display: inline-block;
-                                border: 1px solid #cddbf0;
-                                border-radius: 10px;
-                                background-color: #ffffff;
-                                padding: 10px 13px;
-                                color: #0759d9;
-                                font-size: 12px;
-                                line-height: 16px;
-                                font-weight: 800;
-                                text-decoration: none;
-                                white-space: nowrap;
-                              "
-                            >
-                              Ouvrir le PDF
-                            </a>
-                          </td>
-                        </tr>
-                      </table>
-                    </td>
-                  </tr>
-                  `
-                      : ""
-                  }
+                  ${filesHtml}
 
                   <!-- SÉCURITÉ -->
-
                   <tr>
                     <td
                       style="
@@ -1436,7 +1937,6 @@ function buildHtmlEmail(
                   </tr>
 
                   <!-- AIDE -->
-
                   <tr>
                     <td
                       align="center"
@@ -1477,10 +1977,7 @@ function buildHtmlEmail(
                   </tr>
                 </table>
 
-                <!-- =====================================================
-                     SIGNATURE
-                ====================================================== -->
-
+                <!-- SIGNATURE -->
                 <table
                   role="presentation"
                   width="100%"
@@ -1553,10 +2050,7 @@ function buildHtmlEmail(
               </td>
             </tr>
 
-            <!-- =========================================================
-                 FOOTER
-            ========================================================== -->
-
+            <!-- FOOTER -->
             <tr>
               <td
                 align="center"
@@ -1595,7 +2089,9 @@ function buildHtmlEmail(
                   >
                     afriskill-ai.com
                   </a>
+
                   &nbsp;•&nbsp;
+
                   <a
                     href="mailto:${safeSupportEmail}"
                     style="
@@ -1761,12 +2257,12 @@ export async function sendCourseDeliveryEmail(
      * IMPORTANT :
      *
      * On ne logue ici :
+     *
      * - ni le lien privé ;
-     * - ni l'URL temporaire du PDF ;
+     * - ni les URLs temporaires des fichiers ;
      * - ni le contenu HTML ;
      * - ni la clé Resend.
      */
-
     console.error(
       "[COURSE_DELIVERY_EMAIL_SEND_FAILED]",
       error instanceof Error

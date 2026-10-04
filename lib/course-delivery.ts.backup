@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 import {
   DeliveryStatus,
@@ -17,46 +17,46 @@ import {
 
 /**
  * ============================================================================
- * AFRISKILL AI â€” LIVRAISON AUTOMATIQUE DES FORMATIONS
+ * AFRISKILL AI — LIVRAISON AUTOMATIQUE DES FORMATIONS
  * ============================================================================
  *
- * Ce service orchestre la livraison d'une formation APRÃˆS confirmation rÃ©elle
- * du paiement cÃ´tÃ© serveur.
+ * Ce service orchestre la livraison d'une formation APRÈS confirmation réelle
+ * du paiement côté serveur.
  *
- * RÃˆGLES DE SÃ‰CURITÃ‰ :
+ * RÈGLES DE SÉCURITÉ :
  *
  * - aucune livraison si Payment.status !== PAID ;
  * - aucune livraison si Order.status !== PAID ;
- * - le paiement doit appartenir Ã  la commande ;
- * - le montant et la devise doivent correspondre Ã  la commande ;
- * - chaque formation doit rÃ©ellement appartenir Ã  la commande ;
- * - la quantitÃ© d'une formation doit Ãªtre Ã©gale Ã  1 ;
- * - les ressources restent dans le stockage privÃ© ;
- * - les ressources sont transmises via des URL temporaires signÃ©es ;
- * - aucune URL publique permanente n'est enregistrÃ©e ;
- * - aucune ressource privÃ©e n'est envoyÃ©e avant paiement ;
- * - Enrollment est crÃ©Ã©/rÃ©activÃ© uniquement aprÃ¨s paiement ;
+ * - le paiement doit appartenir à la commande ;
+ * - le montant et la devise doivent correspondre à la commande ;
+ * - chaque formation doit réellement appartenir à la commande ;
+ * - la quantité d'une formation doit être égale à 1 ;
+ * - les ressources restent dans le stockage privé ;
+ * - les ressources sont transmises via des URL temporaires signées ;
+ * - aucune URL publique permanente n'est enregistrée ;
+ * - aucune ressource privée n'est envoyée avant paiement ;
+ * - Enrollment est créé/réactivé uniquement après paiement ;
  * - CourseDelivery conserve l'historique des livraisons ;
- * - les tentatives sont comptabilisÃ©es ;
- * - une livraison SENT n'est jamais renvoyÃ©e automatiquement ;
+ * - les tentatives sont comptabilisées ;
+ * - une livraison SENT n'est jamais renvoyée automatiquement ;
  * - une panne e-mail ne remet jamais le paiement PAID en cause ;
- * - les informations sensibles ne sont jamais journalisÃ©es ici.
+ * - les informations sensibles ne sont jamais journalisées ici.
  *
  * ARCHITECTURE MULTI-FICHIERS :
  *
  * - plusieurs PDF ;
  * - plusieurs documents Word ;
  * - plusieurs archives ZIP ;
- * - ordre dÃ©fini par CourseFile.position ;
- * - compatibilitÃ© avec l'ancien Course.privatePdfPath ;
- * - lien privÃ© Course.privateAccessUrl conservÃ©.
+ * - ordre défini par CourseFile.position ;
+ * - compatibilité avec l'ancien Course.privatePdfPath ;
+ * - lien privé Course.privateAccessUrl conservé.
  *
  * IMPORTANT :
  *
- * Cette fonction doit Ãªtre dÃ©clenchÃ©e par le serveur aprÃ¨s confirmation
- * authentique du paiement, notamment depuis le webhook Moneroo vÃ©rifiÃ©.
+ * Cette fonction doit être déclenchée par le serveur après confirmation
+ * authentique du paiement, notamment depuis le webhook Moneroo vérifié.
  *
- * Elle ne doit jamais Ãªtre dÃ©clenchÃ©e simplement parce que le navigateur
+ * Elle ne doit jamais être déclenchée simplement parce que le navigateur
  * arrive sur une page /paiement/succes.
  * ============================================================================
  */
@@ -98,7 +98,7 @@ export type DeliverPaidOrderResult = Readonly<{
 
 /**
  * ============================================================================
- * ERREUR CONTRÃ”LÃ‰E
+ * ERREUR CONTRÔLÉE
  * ============================================================================
  */
 
@@ -173,13 +173,13 @@ type PaidOrderForDelivery = {
       title: string;
 
       /**
-       * CompatibilitÃ© historique.
+       * Compatibilité historique.
        */
       privatePdfPath: string | null;
       privatePdfName: string | null;
 
       /**
-       * Lien privÃ© Ã©ventuel de la formation.
+       * Lien privé éventuel de la formation.
        */
       privateAccessUrl: string | null;
 
@@ -286,7 +286,7 @@ function normalizeCurrency(
   if (!/^[A-Z]{3}$/.test(normalized)) {
     throw new CourseDeliveryError(
       "INVALID_CURRENCY",
-      "La devise enregistrÃ©e est invalide.",
+      "La devise enregistrée est invalide.",
       500,
     );
   }
@@ -377,7 +377,7 @@ async function getPaidOrderForDelivery(
               title: true,
 
               /**
-               * Ancienne architecture conservÃ©e.
+               * Ancienne architecture conservée.
                */
               privatePdfPath: true,
               privatePdfName: true,
@@ -390,6 +390,10 @@ async function getPaidOrderForDelivery(
                * On ne livre que les fichiers actifs.
                */
               files: {
+                where: {
+                  isActive: true,
+                },
+
                 orderBy: [
                   {
                     position: "asc",
@@ -403,7 +407,7 @@ async function getPaidOrderForDelivery(
                   id: true,
                   type: true,
                   name: true,
-                  path: true,
+                  storagePath: true,
                   mimeType: true,
                   size: true,
                   position: true,
@@ -427,7 +431,7 @@ async function getPaidOrderForDelivery(
   if (order.status !== OrderStatus.PAID) {
     throw new CourseDeliveryError(
       "ORDER_NOT_PAID",
-      "La commande n'est pas confirmÃ©e comme payÃ©e.",
+      "La commande n'est pas confirmée comme payée.",
       409,
     );
   }
@@ -479,7 +483,7 @@ async function getPaidPaymentForDelivery(
   if (payment.status !== PaymentStatus.PAID) {
     throw new CourseDeliveryError(
       "PAYMENT_NOT_PAID",
-      "Le paiement n'est pas confirmÃ© comme payÃ©.",
+      "Le paiement n'est pas confirmé comme payé.",
       409,
     );
   }
@@ -487,7 +491,7 @@ async function getPaidPaymentForDelivery(
   if (!payment.paidAt) {
     throw new CourseDeliveryError(
       "PAYMENT_WITHOUT_PAID_DATE",
-      "Le paiement est marquÃ© payÃ© sans date de confirmation.",
+      "Le paiement est marqué payé sans date de confirmation.",
       409,
     );
   }
@@ -497,7 +501,7 @@ async function getPaidPaymentForDelivery(
 
 /**
  * ============================================================================
- * CONTRÃ”LES PAIEMENT / COMMANDE
+ * CONTRÔLES PAIEMENT / COMMANDE
  * ============================================================================
  */
 
@@ -508,7 +512,7 @@ function assertPaymentMatchesOrder(
   if (payment.orderId !== order.id) {
     throw new CourseDeliveryError(
       "PAYMENT_ORDER_MISMATCH",
-      "Le paiement n'appartient pas Ã  cette commande.",
+      "Le paiement n'appartient pas à cette commande.",
       409,
     );
   }
@@ -532,7 +536,7 @@ function assertPaymentMatchesOrder(
   if (payment.amount !== order.totalAmount) {
     throw new CourseDeliveryError(
       "PAYMENT_AMOUNT_MISMATCH",
-      "Le montant payÃ© ne correspond pas au montant de la commande.",
+      "Le montant payé ne correspond pas au montant de la commande.",
       409,
     );
   }
@@ -546,7 +550,7 @@ function assertPaymentMatchesOrder(
   if (paymentCurrency !== orderCurrency) {
     throw new CourseDeliveryError(
       "PAYMENT_CURRENCY_MISMATCH",
-      "La devise du paiement ne correspond pas Ã  celle de la commande.",
+      "La devise du paiement ne correspond pas à celle de la commande.",
       409,
     );
   }
@@ -555,7 +559,7 @@ function assertPaymentMatchesOrder(
     if (item.course.id !== item.courseId) {
       throw new CourseDeliveryError(
         "COURSE_ORDER_MISMATCH",
-        "Une formation de la commande est incohÃ©rente.",
+        "Une formation de la commande est incohérente.",
         500,
       );
     }
@@ -563,7 +567,7 @@ function assertPaymentMatchesOrder(
     if (item.quantity !== 1) {
       throw new CourseDeliveryError(
         "INVALID_COURSE_QUANTITY",
-        "La quantitÃ© d'une formation doit Ãªtre Ã©gale Ã  1.",
+        "La quantité d'une formation doit être égale à 1.",
         409,
       );
     }
@@ -587,7 +591,7 @@ function assertPaymentMatchesOrder(
     if (item.totalAmount !== item.unitPrice) {
       throw new CourseDeliveryError(
         "INVALID_ORDER_ITEM_AMOUNT",
-        "Le montant d'une formation dans la commande est incohÃ©rent.",
+        "Le montant d'une formation dans la commande est incohérent.",
         409,
       );
     }
@@ -598,7 +602,7 @@ function assertPaymentMatchesOrder(
     ) {
       throw new CourseDeliveryError(
         "ORDER_ITEM_CURRENCY_MISMATCH",
-        "La devise d'une formation ne correspond pas Ã  celle de la commande.",
+        "La devise d'une formation ne correspond pas à celle de la commande.",
         409,
       );
     }
@@ -614,7 +618,7 @@ function assertPaymentMatchesOrder(
   if (!isPositiveSafeInteger(computedTotal)) {
     throw new CourseDeliveryError(
       "INVALID_COMPUTED_TOTAL",
-      "Le total calculÃ© de la commande est invalide.",
+      "Le total calculé de la commande est invalide.",
       500,
     );
   }
@@ -622,7 +626,7 @@ function assertPaymentMatchesOrder(
   if (computedTotal !== order.totalAmount) {
     throw new CourseDeliveryError(
       "ORDER_TOTAL_MISMATCH",
-      "Le total de la commande ne correspond pas aux formations achetÃ©es.",
+      "Le total de la commande ne correspond pas aux formations achetées.",
       409,
     );
   }
@@ -674,7 +678,7 @@ async function ensureEnrollment(
       return;
     } catch (error) {
       /**
-       * Une exÃ©cution concurrente peut avoir crÃ©Ã© l'Enrollment
+       * Une exécution concurrente peut avoir créé l'Enrollment
        * entre le findUnique et le create.
        */
       const concurrentlyCreated =
@@ -696,7 +700,7 @@ async function ensureEnrollment(
       if (!concurrentlyCreated) {
         throw new CourseDeliveryError(
           "ENROLLMENT_CREATION_FAILED",
-          "Impossible d'activer l'accÃ¨s Ã  la formation.",
+          "Impossible d'activer l'accès à la formation.",
           500,
           {
             cause: error,
@@ -731,7 +735,7 @@ async function ensureEnrollment(
   /**
    * On ne modifie pas orderId d'un Enrollment existant.
    *
-   * L'utilisateur possÃ¨de dÃ©jÃ  cette formation.
+   * L'utilisateur possède déjà cette formation.
    */
   if (
     existing.status !== EnrollmentStatus.ACTIVE ||
@@ -755,7 +759,7 @@ async function ensureEnrollment(
 
 /**
  * ============================================================================
- * LIVRAISON â€” LECTURE
+ * LIVRAISON — LECTURE
  * ============================================================================
  */
 
@@ -819,7 +823,7 @@ async function findReusableDelivery(
 
 /**
  * ============================================================================
- * LIVRAISON â€” CRÃ‰ATION
+ * LIVRAISON — CRÉATION
  * ============================================================================
  */
 
@@ -925,7 +929,7 @@ async function claimDelivery(
       if (!concurrentDelivery) {
         throw new CourseDeliveryError(
           "DELIVERY_CREATION_FAILED",
-          "Impossible de prÃ©parer la livraison de la formation.",
+          "Impossible de préparer la livraison de la formation.",
           500,
           {
             cause: error,
@@ -961,7 +965,7 @@ async function claimDelivery(
 
     /**
      * PROCESSING trop ancien :
-     * une ancienne exÃ©cution a probablement Ã©tÃ© interrompue.
+     * une ancienne exécution a probablement été interrompue.
      */
     await db.courseDelivery.updateMany({
       where: {
@@ -983,7 +987,7 @@ async function claimDelivery(
       data: {
         status: DeliveryStatus.FAILED,
         errorMessage:
-          "Une tentative prÃ©cÃ©dente de livraison a Ã©tÃ© interrompue.",
+          "Une tentative précédente de livraison a été interrompue.",
       },
     });
   }
@@ -1031,7 +1035,7 @@ async function claimDelivery(
   }
 
   /**
-   * Une autre exÃ©cution a pu prendre le verrou juste avant nous.
+   * Une autre exécution a pu prendre le verrou juste avant nous.
    */
   const current =
     await db.courseDelivery.findUnique({
@@ -1077,7 +1081,7 @@ async function claimDelivery(
 
 /**
  * ============================================================================
- * RESSOURCES PRIVÃ‰ES MULTI-FICHIERS
+ * RESSOURCES PRIVÉES MULTI-FICHIERS
  * ============================================================================
  */
 
@@ -1087,7 +1091,7 @@ async function createPrivateFileAttachments(
     files: CourseFileForDelivery[];
 
     /**
-     * Ancien PDF conservÃ© pour les formations crÃ©Ã©es avant
+     * Ancien PDF conservé pour les formations créées avant
      * l'introduction de CourseFile.
      */
     legacyPrivatePdfPath: string | null;
@@ -1102,7 +1106,7 @@ async function createPrivateFileAttachments(
       const accesses =
         await coursePrivateFileAccess.createSignedFileUrls(
           input.files.map((file) => ({
-            path: file.path,
+            path: file.storagePath,
             filename: file.name,
             type: file.type,
             mimeType: file.mimeType,
@@ -1118,7 +1122,7 @@ async function createPrivateFileAttachments(
     } catch (error) {
       throw new CourseDeliveryError(
         "PRIVATE_FILES_ACCESS_FAILED",
-        "Impossible de prÃ©parer l'accÃ¨s sÃ©curisÃ© aux fichiers de la formation.",
+        "Impossible de préparer l'accès sécurisé aux fichiers de la formation.",
         500,
         {
           cause: error,
@@ -1128,7 +1132,7 @@ async function createPrivateFileAttachments(
   }
 
   /**
-   * CompatibilitÃ© historique :
+   * Compatibilité historique :
    *
    * si aucun CourseFile n'existe encore, on utilise privatePdfPath.
    */
@@ -1168,7 +1172,7 @@ async function createPrivateFileAttachments(
   } catch (error) {
     throw new CourseDeliveryError(
       "PRIVATE_PDF_ACCESS_FAILED",
-      "Impossible de prÃ©parer l'accÃ¨s sÃ©curisÃ© au PDF historique de la formation.",
+      "Impossible de préparer l'accès sécurisé au PDF historique de la formation.",
       500,
       {
         cause: error,
@@ -1179,7 +1183,7 @@ async function createPrivateFileAttachments(
 
 /**
  * ============================================================================
- * LIEN PRIVÃ‰ DE FORMATION
+ * LIEN PRIVÉ DE FORMATION
  * ============================================================================
  */
 
@@ -1200,7 +1204,7 @@ function normalizePrivateAccessUrl(
   } catch {
     throw new CourseDeliveryError(
       "INVALID_PRIVATE_ACCESS_URL",
-      "Le lien privÃ© de la formation est invalide.",
+      "Le lien privé de la formation est invalide.",
       500,
     );
   }
@@ -1208,7 +1212,7 @@ function normalizePrivateAccessUrl(
   if (url.protocol !== "https:") {
     throw new CourseDeliveryError(
       "INVALID_PRIVATE_ACCESS_URL",
-      "Le lien privÃ© de la formation doit utiliser HTTPS.",
+      "Le lien privé de la formation doit utiliser HTTPS.",
       500,
     );
   }
@@ -1246,8 +1250,8 @@ async function markDeliveryFailed(
     });
   } catch {
     /**
-     * Ne jamais masquer l'erreur originale parce que la mise Ã  jour
-     * du statut de livraison a elle-mÃªme Ã©chouÃ©.
+     * Ne jamais masquer l'erreur originale parce que la mise à jour
+     * du statut de livraison a elle-même échoué.
      */
   }
 }
@@ -1274,14 +1278,14 @@ async function deliverCourse(
   } = input;
 
   /**
-   * L'accÃ¨s applicatif est crÃ©Ã© uniquement aprÃ¨s :
+   * L'accès applicatif est créé uniquement après :
    *
    * - Order PAID ;
    * - Payment PAID ;
-   * - contrÃ´le montant ;
-   * - contrÃ´le devise ;
-   * - contrÃ´le d'appartenance du paiement ;
-   * - contrÃ´le de la formation.
+   * - contrôle montant ;
+   * - contrôle devise ;
+   * - contrôle d'appartenance du paiement ;
+   * - contrôle de la formation.
    */
   await ensureEnrollment({
     userId: order.userId,
@@ -1347,14 +1351,14 @@ async function deliverCourse(
 
   try {
     /**
-     * Les URL signÃ©es sont gÃ©nÃ©rÃ©es seulement APRÃˆS :
+     * Les URL signées sont générées seulement APRÈS :
      *
      * - validation du paiement ;
      * - validation de la commande ;
      * - activation Enrollment ;
      * - acquisition du verrou de livraison.
      *
-     * Elles ne sont jamais enregistrÃ©es en base.
+     * Elles ne sont jamais enregistrées en base.
      */
     const files =
       await createPrivateFileAttachments({
@@ -1382,20 +1386,20 @@ async function deliverCourse(
     ) {
       throw new CourseDeliveryError(
         "COURSE_HAS_NO_PRIVATE_CONTENT",
-        `La formation "${item.courseTitle}" ne contient aucun fichier privÃ© ni lien privÃ© Ã  livrer.`,
+        `La formation "${item.courseTitle}" ne contient aucun fichier privé ni lien privé à livrer.`,
         409,
       );
     }
 
     /**
      * ------------------------------------------------------------------------
-     * COMPATIBILITÃ‰ E-MAIL
+     * COMPATIBILITÉ E-MAIL
      * ------------------------------------------------------------------------
      *
-     * `files` reprÃ©sente dÃ©sormais toutes les ressources privÃ©es.
+     * `files` représente désormais toutes les ressources privées.
      *
-     * `pdf` reste Ã©galement fourni lorsque cela est possible afin de
-     * conserver la compatibilitÃ© avec l'ancien contrat de
+     * `pdf` reste également fourni lorsque cela est possible afin de
+     * conserver la compatibilité avec l'ancien contrat de
      * lib/course-delivery-email.ts pendant la migration.
      */
 
@@ -1440,7 +1444,7 @@ async function deliverCourse(
         /**
          * Nouveau contrat multi-fichiers.
          *
-         * Le prochain fichier mis Ã  jour sera
+         * Le prochain fichier mis à jour sera
          * lib/course-delivery-email.ts.
          */
         files,
@@ -1451,7 +1455,7 @@ async function deliverCourse(
         ?.trim() || null;
 
     /**
-     * SENT n'est enregistrÃ© qu'aprÃ¨s rÃ©ussite effective de Resend.
+     * SENT n'est enregistré qu'après réussite effective de Resend.
      */
     const markedSent =
       await db.courseDelivery.updateMany({
@@ -1478,7 +1482,7 @@ async function deliverCourse(
     if (markedSent.count !== 1) {
       throw new CourseDeliveryError(
         "DELIVERY_FINALIZATION_FAILED",
-        "L'e-mail a Ã©tÃ© envoyÃ© mais son statut de livraison n'a pas pu Ãªtre finalisÃ© correctement.",
+        "L'e-mail a été envoyé mais son statut de livraison n'a pas pu être finalisé correctement.",
         500,
       );
     }
@@ -1506,7 +1510,7 @@ async function deliverCourse(
      * Enrollment reste actif.
      *
      * Une panne Resend/Supabase ne doit jamais annuler
-     * un paiement rÃ©ellement confirmÃ©.
+     * un paiement réellement confirmé.
      */
     await markDeliveryFailed(
       deliveryId,
@@ -1553,10 +1557,10 @@ export async function deliverPaidOrder(
     );
 
   /**
-   * On recharge toujours les donnÃ©es depuis PostgreSQL.
+   * On recharge toujours les données depuis PostgreSQL.
    *
-   * Aucune donnÃ©e critique provenant du navigateur ou du webhook brut
-   * n'est utilisÃ©e comme source de vÃ©ritÃ©.
+   * Aucune donnée critique provenant du navigateur ou du webhook brut
+   * n'est utilisée comme source de vérité.
    */
   const [
     order,
@@ -1585,14 +1589,14 @@ export async function deliverPaidOrder(
     CourseDeliveryItemResult[] = [];
 
   /**
-   * Traitement sÃ©quentiel volontaire.
+   * Traitement séquentiel volontaire.
    *
    * Cela simplifie :
    *
    * - l'idempotence ;
    * - le suivi des tentatives ;
-   * - la traÃ§abilitÃ© ;
-   * - la protection contre plusieurs appels externes simultanÃ©s.
+   * - la traçabilité ;
+   * - la protection contre plusieurs appels externes simultanés.
    */
   for (const item of order.items) {
     const result =
@@ -1627,17 +1631,17 @@ export async function deliverPaidOrder(
  * RELANCE D'UNE LIVRAISON
  * ============================================================================
  *
- * Une relance repasse obligatoirement par les mÃªmes contrÃ´les :
+ * Une relance repasse obligatoirement par les mêmes contrôles :
  *
  * - Order PAID ;
  * - Payment PAID ;
- * - paiement appartenant Ã  la commande ;
+ * - paiement appartenant à la commande ;
  * - montant identique ;
  * - devise identique ;
- * - formation appartenant Ã  la commande.
+ * - formation appartenant à la commande.
  *
- * Une livraison SENT n'est jamais renvoyÃ©e automatiquement.
- * Une livraison FAILED peut Ãªtre reprise.
+ * Une livraison SENT n'est jamais renvoyée automatiquement.
+ * Une livraison FAILED peut être reprise.
  * ============================================================================
  */
 
@@ -1771,5 +1775,3 @@ export async function getOrderDeliveryStatus(
       ),
   };
 }
-
-

@@ -130,3 +130,12 @@ export const TokenType = {
 } as const
 
 export type TokenType = (typeof TokenType)[keyof typeof TokenType]
+
+
+export const CourseFileType = {
+  PDF: 'PDF',
+  WORD: 'WORD',
+  ZIP: 'ZIP'
+} as const
+
+export type CourseFileType = (typeof CourseFileType)[keyof typeof CourseFileType]

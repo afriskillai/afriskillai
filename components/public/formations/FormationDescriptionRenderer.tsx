@@ -2,10 +2,13 @@ import type { ReactNode } from "react";
 
 import {
   getPublicCourseDescriptionFallback,
+  getPublicCourseDescriptionVideoTitle,
+  isPublicCourseDescriptionVideoProvider,
   publicCourseHasRichDescription,
   type PublicCourseDescriptionDocument,
   type PublicCourseDescriptionMark,
   type PublicCourseDescriptionNode,
+  type PublicCourseDescriptionVideoProvider,
   type PublicCourseDetail,
 } from "@/types/public-course";
 
@@ -21,7 +24,9 @@ import {
  * - aucun HTML arbitraire venant de la base ;
  * - aucun import de l'éditeur TipTap ;
  * - rendu uniquement des nœuds autorisés par nos types publics ;
- * - conservation exacte de l'ordre texte / image / texte ;
+ * - conservation exacte de l'ordre texte / image / vidéo / texte ;
+ * - validation défensive des images, liens et vidéos ;
+ * - YouTube et Vimeo uniquement pour les vidéos ;
  * - fallback vers la description texte historique ;
  * - compatible Server Component ;
  * - responsive par défaut.
@@ -48,6 +53,13 @@ type TextMarkRendererProps = {
     | PublicCourseDescriptionMark[]
     | null
     | undefined;
+};
+
+type ValidatedPublicVideo = {
+  provider: PublicCourseDescriptionVideoProvider;
+  videoId: string;
+  embedUrl: string;
+  canonicalUrl: string;
 };
 
 function joinClassNames(
@@ -382,6 +394,176 @@ function renderDescriptionImage(
 }
 
 /**
+ * ============================================================================
+ * VIDÉOS PUBLIQUES DE DÉMONSTRATION
+ * ============================================================================
+ *
+ * Une vidéo n'est jamais rendue directement depuis une URL arbitraire.
+ *
+ * Le renderer :
+ * 1. vérifie le provider ;
+ * 2. vérifie le videoId ;
+ * 3. reconstruit lui-même l'URL du lecteur ;
+ * 4. n'autorise que YouTube et Vimeo.
+ *
+ * Le champ videoUrl enregistré dans la description est donc informatif.
+ * Il ne devient jamais directement le src de l'iframe.
+ * ============================================================================
+ */
+
+function isValidYouTubeVideoId(
+  value: string,
+): boolean {
+  return /^[A-Za-z0-9_-]{11}$/.test(
+    value,
+  );
+}
+
+function isValidVimeoVideoId(
+  value: string,
+): boolean {
+  return /^\d{5,15}$/.test(value);
+}
+
+function validatePublicVideo(
+  node: PublicCourseDescriptionNode,
+): ValidatedPublicVideo | null {
+  const provider =
+    node.attrs?.provider;
+
+  const rawVideoId =
+    node.attrs?.videoId;
+
+  if (
+    !isPublicCourseDescriptionVideoProvider(
+      provider,
+    ) ||
+    typeof rawVideoId !== "string"
+  ) {
+    return null;
+  }
+
+  const videoId =
+    rawVideoId.trim();
+
+  if (provider === "youtube") {
+    if (
+      !isValidYouTubeVideoId(videoId)
+    ) {
+      return null;
+    }
+
+    return {
+      provider,
+      videoId,
+      embedUrl:
+        `https://www.youtube-nocookie.com/embed/${encodeURIComponent(
+          videoId,
+        )}`,
+      canonicalUrl:
+        `https://www.youtube.com/watch?v=${encodeURIComponent(
+          videoId,
+        )}`,
+    };
+  }
+
+  if (provider === "vimeo") {
+    if (
+      !isValidVimeoVideoId(videoId)
+    ) {
+      return null;
+    }
+
+    return {
+      provider,
+      videoId,
+      embedUrl:
+        `https://player.vimeo.com/video/${encodeURIComponent(
+          videoId,
+        )}`,
+      canonicalUrl:
+        `https://vimeo.com/${encodeURIComponent(
+          videoId,
+        )}`,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Rend une vidéo de démonstration exactement à la
+ * position où son nœud apparaît dans descriptionContent.
+ */
+function renderDescriptionVideo(
+  node: PublicCourseDescriptionNode,
+  context: RenderNodeContext,
+  path: string,
+): ReactNode {
+  const video =
+    validatePublicVideo(node);
+
+  if (!video) {
+    return null;
+  }
+
+  const title =
+    getPublicCourseDescriptionVideoTitle(
+      typeof node.attrs?.videoTitle ===
+        "string"
+        ? node.attrs.videoTitle
+        : null,
+      context.courseTitle,
+    );
+
+  const providerLabel =
+    video.provider === "youtube"
+      ? "YouTube"
+      : "Vimeo";
+
+  return (
+    <figure
+      key={path}
+      className="my-8 overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-sm sm:my-10 sm:rounded-3xl"
+    >
+      <div className="relative aspect-video w-full overflow-hidden bg-black">
+        <iframe
+          src={video.embedUrl}
+          title={title}
+          loading="lazy"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+          className="absolute inset-0 h-full w-full border-0"
+        />
+      </div>
+
+      <figcaption className="flex flex-col gap-2 border-t border-white/10 bg-slate-950 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-extrabold text-white sm:text-base">
+            {title}
+          </p>
+
+          <p className="mt-1 text-xs font-semibold text-slate-400">
+            Vidéo de démonstration ·{" "}
+            {providerLabel}
+          </p>
+        </div>
+
+        <a
+          href={video.canonicalUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex shrink-0 items-center text-xs font-extrabold text-blue-300 underline decoration-blue-500/60 underline-offset-4 transition-colors hover:text-white"
+        >
+          Ouvrir sur {providerLabel}
+        </a>
+      </figcaption>
+    </figure>
+  );
+}
+
+/**
  * Renderer principal d'un nœud structuré.
  */
 function renderNode(
@@ -501,6 +683,13 @@ function renderNode(
 
     case "image":
       return renderDescriptionImage(
+        node,
+        context,
+        path,
+      );
+
+    case "video":
+      return renderDescriptionVideo(
         node,
         context,
         path,

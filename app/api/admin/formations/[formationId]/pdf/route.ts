@@ -8,15 +8,70 @@ import { db } from "@/lib/db";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_PDF_SIZE = 25 * 1024 * 1024;
-const PDF_MIME_TYPE = "application/pdf";
+/**
+ * ============================================================================
+ * AFRISKILL AI — RESSOURCES PRIVÉES D'UNE FORMATION
+ * ============================================================================
+ *
+ * Cette route conserve la compatibilité avec l'ancien système PDF tout en
+ * ajoutant le nouveau système multi-fichiers CourseFile.
+ *
+ * Compatibilité historique :
+ * - POST avec champ "pdf" => upload/remplacement de l'ancien PDF.
+ * - DELETE sans fileId => suppression de l'ancien PDF.
+ *
+ * Nouveau système :
+ * - GET => liste des fichiers privés.
+ * - POST avec champ "files" => ajout d'un ou plusieurs PDF / Word / ZIP.
+ * - DELETE ?fileId=... => suppression d'un CourseFile précis.
+ *
+ * Aucun fichier privé ne reçoit d'URL publique permanente.
+ * Seul son chemin Supabase Storage est enregistré dans PostgreSQL.
+ * ============================================================================
+ */
 
 const DEFAULT_BUCKET = "course-files";
+
+const MAX_PDF_SIZE = 25 * 1024 * 1024;
+const MAX_WORD_SIZE = 25 * 1024 * 1024;
+const MAX_ZIP_SIZE = 100 * 1024 * 1024;
+
+const MAX_FILES_PER_REQUEST = 20;
+const MAX_FILES_PER_COURSE = 100;
+const MAX_TOTAL_UPLOAD_SIZE = 250 * 1024 * 1024;
+
+const PDF_MIME_TYPE = "application/pdf";
+
+const WORD_MIME_TYPES = new Set([
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+
+const ZIP_MIME_TYPES = new Set([
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/octet-stream",
+]);
 
 type RouteContext = {
   params: Promise<{
     formationId: string;
   }>;
+};
+
+type CourseFileTypeValue = "PDF" | "WORD" | "ZIP";
+
+type ValidatedCourseFile = {
+  file: File;
+  type: CourseFileTypeValue;
+  extension: ".pdf" | ".doc" | ".docx" | ".zip";
+  mimeType: string;
+  originalFileName: string;
+};
+
+type UploadedStorageFile = {
+  storagePath: string;
+  validatedFile: ValidatedCourseFile;
 };
 
 type SupabaseStorageError = {
@@ -27,24 +82,161 @@ type SupabaseStorageError = {
 
 /**
  * ============================================================================
- * POST /api/admin/formations/[formationId]/pdf
+ * GET
  * ============================================================================
  *
- * Upload ou remplacement du PDF privé d'une formation.
+ * Retourne les métadonnées des fichiers privés.
  *
- * Sécurité :
- * - administrateur authentifié obligatoire ;
- * - formation vérifiée en base ;
- * - multipart/form-data uniquement ;
- * - PDF uniquement ;
- * - taille maximale de 25 Mo ;
- * - vérification de la signature réelle "%PDF-" ;
- * - bucket Supabase privé ;
- * - aucune URL publique permanente enregistrée ;
- * - seul le chemin Storage est conservé en base ;
- * - l'ancien fichier n'est supprimé qu'après la réussite complète
- *   du nouvel upload et de la mise à jour PostgreSQL.
+ * IMPORTANT :
+ * - aucun chemin Storage n'est exposé au client ;
+ * - aucune URL signée n'est générée ici ;
+ * - l'ancien PDF est signalé séparément pendant la période de transition.
  */
+
+export async function GET(
+  _request: Request,
+  context: RouteContext,
+) {
+  const session = await getAdminSession();
+
+  if (!session) {
+    return unauthorized();
+  }
+
+  const formationId = await getFormationId(context);
+
+  if (!formationId) {
+    return errorResponse(
+      "Identifiant de formation invalide.",
+      400,
+    );
+  }
+
+  try {
+    const formation = await db.course.findUnique({
+      where: {
+        id: formationId,
+      },
+
+      select: {
+        id: true,
+        title: true,
+
+        privatePdfPath: true,
+        privatePdfName: true,
+        privatePdfSize: true,
+
+        files: {
+          orderBy: [
+            {
+              position: "asc",
+            },
+            {
+              createdAt: "asc",
+            },
+          ],
+
+          select: {
+            id: true,
+            type: true,
+            name: true,
+            size: true,
+            mimeType: true,
+            position: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
+    });
+
+    if (!formation) {
+      return errorResponse(
+        "Formation introuvable.",
+        404,
+      );
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+
+        formation: {
+          id: formation.id,
+          title: formation.title,
+        },
+
+        legacyPdf: formation.privatePdfPath
+          ? {
+              name:
+                formation.privatePdfName ??
+                "formation.pdf",
+
+              size:
+                formation.privatePdfSize ??
+                null,
+
+              hasPdf: true,
+            }
+          : null,
+
+        files: formation.files.map((file) => ({
+          id: file.id,
+          type: file.type,
+          name: file.name,
+          size: file.size,
+          mimeType: file.mimeType,
+          position: file.position,
+          createdAt: file.createdAt.toISOString(),
+          updatedAt: file.updatedAt.toISOString(),
+        })),
+
+        totalFiles: formation.files.length,
+      },
+      {
+        status: 200,
+        headers: noStoreHeaders(),
+      },
+    );
+  } catch (error) {
+    console.error(
+      "[ADMIN_FORMATION_FILES_GET]",
+      error,
+    );
+
+    return serverError();
+  }
+}
+
+/**
+ * ============================================================================
+ * POST
+ * ============================================================================
+ *
+ * Deux modes sont volontairement supportés.
+ *
+ * MODE HISTORIQUE
+ * ---------------
+ * champ multipart : pdf
+ *
+ * Conserve exactement le principe historique :
+ * - un seul PDF ;
+ * - remplacement de l'ancien PDF ;
+ * - mise à jour privatePdf*.
+ *
+ * MODE MULTI-FICHIERS
+ * -------------------
+ * champ multipart : files
+ *
+ * Permet :
+ * - plusieurs PDF ;
+ * - plusieurs DOC ;
+ * - plusieurs DOCX ;
+ * - plusieurs ZIP.
+ *
+ * Les fichiers sont ajoutés sans remplacer les fichiers existants.
+ */
+
 export async function POST(
   request: Request,
   context: RouteContext,
@@ -66,7 +258,7 @@ export async function POST(
 
   if (!isMultipartRequest(request)) {
     return errorResponse(
-      "Le fichier PDF doit être envoyé au format multipart/form-data.",
+      "Les fichiers doivent être envoyés au format multipart/form-data.",
       415,
     );
   }
@@ -75,7 +267,7 @@ export async function POST(
 
   if (!storageConfig.ok) {
     console.error(
-      "[ADMIN_FORMATION_PDF_CONFIG]",
+      "[ADMIN_FORMATION_FILES_CONFIG]",
       storageConfig.error,
     );
 
@@ -85,16 +277,427 @@ export async function POST(
     );
   }
 
+  let formData: FormData;
+
+  try {
+    formData = await request.formData();
+  } catch {
+    return errorResponse(
+      "Impossible de lire les fichiers envoyés.",
+      400,
+    );
+  }
+
+  /**
+   * L'ancien formulaire envoie "pdf".
+   * On conserve ce comportement sans modification.
+   */
+  const legacyPdfValue = formData.get("pdf");
+
+  const multiFileValues = formData
+    .getAll("files")
+    .filter(
+      (value): value is File =>
+        value instanceof File &&
+        value.size > 0,
+    );
+
+  /**
+   * Compatibilité supplémentaire avec les clients qui utilisaient "file".
+   *
+   * Si "files" n'existe pas et qu'un seul "file" est envoyé,
+   * on le traite comme une ressource multi-fichiers.
+   */
+  const genericFileValue = formData.get("file");
+
+  if (
+    multiFileValues.length === 0 &&
+    genericFileValue instanceof File &&
+    genericFileValue.size > 0
+  ) {
+    multiFileValues.push(genericFileValue);
+  }
+
+  /**
+   * Priorité au nouveau mode lorsque "files" est explicitement utilisé.
+   */
+  if (multiFileValues.length > 0) {
+    return handleMultipleFilesUpload({
+      formationId,
+      files: multiFileValues,
+      storageConfig,
+    });
+  }
+
+  /**
+   * Sinon on conserve l'ancien upload PDF.
+   */
+  if (
+    legacyPdfValue instanceof File &&
+    legacyPdfValue.size > 0
+  ) {
+    return handleLegacyPdfUpload({
+      formationId,
+      file: legacyPdfValue,
+      storageConfig,
+    });
+  }
+
+  return validationError(
+    "files",
+    "Aucun fichier n'a été envoyé.",
+  );
+}
+
+/**
+ * ============================================================================
+ * MULTI-FILES UPLOAD
+ * ============================================================================
+ */
+
+async function handleMultipleFilesUpload(input: {
+  formationId: string;
+  files: File[];
+  storageConfig: StorageConfigSuccess;
+}) {
+  if (input.files.length > MAX_FILES_PER_REQUEST) {
+    return validationError(
+      "files",
+      `Vous pouvez ajouter au maximum ${MAX_FILES_PER_REQUEST} fichiers en une seule fois.`,
+    );
+  }
+
+  const totalIncomingSize = input.files.reduce(
+    (total, file) => total + file.size,
+    0,
+  );
+
+  if (totalIncomingSize > MAX_TOTAL_UPLOAD_SIZE) {
+    return validationError(
+      "files",
+      "La taille totale des fichiers envoyés est trop importante.",
+    );
+  }
+
   try {
     const formation = await db.course.findUnique({
       where: {
-        id: formationId,
+        id: input.formationId,
       },
 
       select: {
         id: true,
         title: true,
 
+        _count: {
+          select: {
+            files: true,
+          },
+        },
+
+        files: {
+          orderBy: {
+            position: "desc",
+          },
+
+          take: 1,
+
+          select: {
+            position: true,
+          },
+        },
+      },
+    });
+
+    if (!formation) {
+      return errorResponse(
+        "Formation introuvable.",
+        404,
+      );
+    }
+
+    if (
+      formation._count.files +
+        input.files.length >
+      MAX_FILES_PER_COURSE
+    ) {
+      return validationError(
+        "files",
+        `Une formation peut contenir au maximum ${MAX_FILES_PER_COURSE} fichiers privés.`,
+      );
+    }
+
+    const validatedFiles: ValidatedCourseFile[] = [];
+
+    /**
+     * On valide TOUS les fichiers avant le premier upload.
+     *
+     * Ainsi, si le quatrième fichier est invalide, les trois premiers
+     * ne sont pas inutilement envoyés dans Storage.
+     */
+    for (const file of input.files) {
+      const validation =
+        await validateCourseFile(file);
+
+      if (!validation.ok) {
+        return validationError(
+          "files",
+          validation.message,
+        );
+      }
+
+      validatedFiles.push({
+        file,
+        type: validation.type,
+        extension: validation.extension,
+        mimeType: validation.mimeType,
+        originalFileName:
+          sanitizeOriginalFileName(
+            file.name,
+            validation.extension,
+          ),
+      });
+    }
+
+    const uploadedFiles: UploadedStorageFile[] = [];
+
+    /**
+     * ========================================================================
+     * 1. STORAGE
+     * ========================================================================
+     */
+
+    for (const validatedFile of validatedFiles) {
+      const storageFileName =
+        `${Date.now()}-${randomUUID()}` +
+        validatedFile.extension;
+
+      const storagePath =
+        `formations/${formation.id}/resources/` +
+        storageFileName;
+
+      const bytes = new Uint8Array(
+        await validatedFile.file.arrayBuffer(),
+      );
+
+      const uploadResult =
+        await uploadPrivateFileToSupabase({
+          supabaseUrl:
+            input.storageConfig.supabaseUrl,
+
+          secretKey:
+            input.storageConfig.secretKey,
+
+          bucket:
+            input.storageConfig.bucket,
+
+          storagePath,
+
+          bytes,
+
+          contentType:
+            validatedFile.mimeType,
+        });
+
+      if (!uploadResult.ok) {
+        console.error(
+          "[ADMIN_FORMATION_FILE_UPLOAD]",
+          {
+            formationId: formation.id,
+            fileName:
+              validatedFile.originalFileName,
+            error: uploadResult.error,
+          },
+        );
+
+        /**
+         * On retire tous les fichiers déjà envoyés pendant cette requête.
+         */
+        await rollbackUploadedFiles({
+          storageConfig: input.storageConfig,
+          storagePaths: uploadedFiles.map(
+            (uploadedFile) =>
+              uploadedFile.storagePath,
+          ),
+        });
+
+        return errorResponse(
+          `Impossible d'enregistrer le fichier « ${validatedFile.originalFileName} » dans le stockage privé.`,
+          502,
+        );
+      }
+
+      uploadedFiles.push({
+        storagePath,
+        validatedFile,
+      });
+    }
+
+    /**
+     * ========================================================================
+     * 2. POSTGRESQL
+     * ========================================================================
+     */
+
+    const currentHighestPosition =
+      formation.files[0]?.position ?? -1;
+
+    let createdFiles: Array<{
+      id: string;
+      type: CourseFileTypeValue;
+      name: string;
+      size: number;
+      mimeType: string | null;
+      position: number;
+      createdAt: Date;
+      updatedAt: Date;
+    }>;
+
+    try {
+      createdFiles = await db.$transaction(
+        async (transaction) => {
+          const results: Array<{
+            id: string;
+            type: CourseFileTypeValue;
+            name: string;
+            size: number;
+            mimeType: string | null;
+            position: number;
+            createdAt: Date;
+            updatedAt: Date;
+          }> = [];
+
+          for (
+            let index = 0;
+            index < uploadedFiles.length;
+            index += 1
+          ) {
+            const uploadedFile =
+              uploadedFiles[index];
+
+            const created =
+              await transaction.courseFile.create({
+                data: {
+                  courseId: formation.id,
+
+                  type:
+                    uploadedFile.validatedFile.type,
+
+                  name:
+                    uploadedFile.validatedFile
+                      .originalFileName,
+
+                  path:
+                    uploadedFile.storagePath,
+
+                  size:
+                    uploadedFile.validatedFile.file
+                      .size,
+
+                  mimeType:
+                    uploadedFile.validatedFile
+                      .mimeType,
+
+                  position:
+                    currentHighestPosition +
+                    index +
+                    1,
+                },
+
+                select: {
+                  id: true,
+                  type: true,
+                  name: true,
+                  size: true,
+                  mimeType: true,
+                  position: true,
+                  createdAt: true,
+                  updatedAt: true,
+                },
+              });
+
+            results.push(created);
+          }
+
+          return results;
+        },
+      );
+    } catch (databaseError) {
+      /**
+       * PostgreSQL a refusé l'enregistrement.
+       *
+       * Les objets Storage envoyés pendant cette requête doivent être retirés.
+       */
+      await rollbackUploadedFiles({
+        storageConfig: input.storageConfig,
+        storagePaths: uploadedFiles.map(
+          (uploadedFile) =>
+            uploadedFile.storagePath,
+        ),
+      });
+
+      throw databaseError;
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+
+        message:
+          createdFiles.length === 1
+            ? "Le fichier privé a été ajouté avec succès."
+            : `${createdFiles.length} fichiers privés ont été ajoutés avec succès.`,
+
+        files: createdFiles.map((file) => ({
+          id: file.id,
+          type: file.type,
+          name: file.name,
+          size: file.size,
+          mimeType: file.mimeType,
+          position: file.position,
+          createdAt: file.createdAt.toISOString(),
+          updatedAt: file.updatedAt.toISOString(),
+        })),
+
+        addedCount: createdFiles.length,
+      },
+      {
+        status: 201,
+        headers: noStoreHeaders(),
+      },
+    );
+  } catch (error) {
+    console.error(
+      "[ADMIN_FORMATION_FILES_POST]",
+      error,
+    );
+
+    return serverError();
+  }
+}
+
+/**
+ * ============================================================================
+ * LEGACY PDF UPLOAD
+ * ============================================================================
+ *
+ * Conserve l'ancien fonctionnement pendant la migration.
+ */
+
+async function handleLegacyPdfUpload(input: {
+  formationId: string;
+  file: File;
+  storageConfig: StorageConfigSuccess;
+}) {
+  try {
+    const formation = await db.course.findUnique({
+      where: {
+        id: input.formationId,
+      },
+
+      select: {
+        id: true,
+        title: true,
         privatePdfPath: true,
         privatePdfName: true,
         privatePdfSize: true,
@@ -108,36 +711,8 @@ export async function POST(
       );
     }
 
-    let formData: FormData;
-
-    try {
-      formData = await request.formData();
-    } catch {
-      return errorResponse(
-        "Impossible de lire le fichier envoyé.",
-        400,
-      );
-    }
-
-    /*
-     * Le formulaire peut envoyer "pdf".
-     * On accepte également "file" afin de rendre l'endpoint
-     * plus robuste si le composant d'upload évolue.
-     */
-    const uploadedValue =
-      formData.get("pdf") ??
-      formData.get("file");
-
-    if (!(uploadedValue instanceof File)) {
-      return validationError(
-        "pdf",
-        "Aucun fichier PDF n'a été envoyé.",
-      );
-    }
-
-    const file = uploadedValue;
-
-    const validation = await validatePdf(file);
+    const validation =
+      await validateCourseFile(input.file);
 
     if (!validation.ok) {
       return validationError(
@@ -146,41 +721,49 @@ export async function POST(
       );
     }
 
+    if (validation.type !== "PDF") {
+      return validationError(
+        "pdf",
+        "Le fichier historique doit être un PDF.",
+      );
+    }
+
     const originalFileName =
-      sanitizeOriginalFileName(file.name);
+      sanitizeOriginalFileName(
+        input.file.name,
+        ".pdf",
+      );
 
-    const fileExtension = ".pdf";
-
-    /*
-     * Le nom Storage n'utilise jamais directement le nom fourni
-     * par l'utilisateur.
-     *
-     * Cela évite :
-     * - collisions ;
-     * - caractères spéciaux ;
-     * - tentatives de manipulation de chemin.
-     */
     const storageFileName =
-      `${Date.now()}-${randomUUID()}${fileExtension}`;
+      `${Date.now()}-${randomUUID()}.pdf`;
 
+    /**
+     * On conserve volontairement l'ancien chemin pour compatibilité.
+     */
     const storagePath =
-      `formations/${formation.id}/${storageFileName}`;
+      `formations/${formation.id}/` +
+      storageFileName;
 
     const bytes = new Uint8Array(
-      await file.arrayBuffer(),
+      await input.file.arrayBuffer(),
     );
 
-    // ========================================================================
-    // 1. UPLOAD DU NOUVEAU PDF
-    // ========================================================================
-
     const uploadResult =
-      await uploadPrivatePdfToSupabase({
-        supabaseUrl: storageConfig.supabaseUrl,
-        secretKey: storageConfig.secretKey,
-        bucket: storageConfig.bucket,
+      await uploadPrivateFileToSupabase({
+        supabaseUrl:
+          input.storageConfig.supabaseUrl,
+
+        secretKey:
+          input.storageConfig.secretKey,
+
+        bucket:
+          input.storageConfig.bucket,
+
         storagePath,
+
         bytes,
+
+        contentType: PDF_MIME_TYPE,
       });
 
     if (!uploadResult.ok) {
@@ -195,10 +778,6 @@ export async function POST(
       );
     }
 
-    // ========================================================================
-    // 2. MISE À JOUR POSTGRESQL
-    // ========================================================================
-
     let updatedFormation: {
       id: string;
       title: string;
@@ -209,95 +788,72 @@ export async function POST(
     };
 
     try {
-      updatedFormation = await db.course.update({
-        where: {
-          id: formation.id,
-        },
+      updatedFormation =
+        await db.course.update({
+          where: {
+            id: formation.id,
+          },
 
-        data: {
-          privatePdfPath: storagePath,
-          privatePdfName: originalFileName,
-          privatePdfSize: file.size,
-        },
+          data: {
+            privatePdfPath: storagePath,
+            privatePdfName:
+              originalFileName,
+            privatePdfSize:
+              input.file.size,
+          },
 
-        select: {
-          id: true,
-          title: true,
-
-          privatePdfPath: true,
-          privatePdfName: true,
-          privatePdfSize: true,
-
-          updatedAt: true,
-        },
-      });
-    } catch (databaseError) {
-      /*
-       * La base n'a pas pu être mise à jour.
-       *
-       * Le nouveau fichier ne doit donc pas rester orphelin
-       * dans Supabase.
-       */
-      const rollbackResult =
-        await deletePrivatePdfFromSupabase({
-          supabaseUrl:
-            storageConfig.supabaseUrl,
-          secretKey:
-            storageConfig.secretKey,
-          bucket:
-            storageConfig.bucket,
-          storagePaths: [
-            storagePath,
-          ],
+          select: {
+            id: true,
+            title: true,
+            privatePdfPath: true,
+            privatePdfName: true,
+            privatePdfSize: true,
+            updatedAt: true,
+          },
         });
+    } catch (databaseError) {
+      await deletePrivateFilesFromSupabase({
+        supabaseUrl:
+          input.storageConfig.supabaseUrl,
 
-      if (!rollbackResult.ok) {
-        console.error(
-          "[ADMIN_FORMATION_PDF_ROLLBACK_FAILED]",
-          rollbackResult.error,
-        );
-      }
+        secretKey:
+          input.storageConfig.secretKey,
+
+        bucket:
+          input.storageConfig.bucket,
+
+        storagePaths: [storagePath],
+      });
 
       throw databaseError;
     }
 
-    // ========================================================================
-    // 3. SUPPRESSION DE L'ANCIEN PDF
-    // ========================================================================
-
-    /*
-     * On supprime l'ancien PDF seulement APRÈS :
-     *
-     * 1. nouvel upload réussi ;
-     * 2. base PostgreSQL mise à jour.
-     *
-     * Ainsi, une erreur pendant l'upload ne détruit jamais
-     * le PDF actuellement utilisé par la formation.
+    /**
+     * L'ancien PDF n'est retiré qu'après :
+     * - upload réussi ;
+     * - mise à jour PostgreSQL réussie.
      */
     if (
       formation.privatePdfPath &&
-      formation.privatePdfPath !== storagePath
+      formation.privatePdfPath !==
+        storagePath
     ) {
       const deleteOldResult =
-        await deletePrivatePdfFromSupabase({
+        await deletePrivateFilesFromSupabase({
           supabaseUrl:
-            storageConfig.supabaseUrl,
+            input.storageConfig.supabaseUrl,
+
           secretKey:
-            storageConfig.secretKey,
+            input.storageConfig.secretKey,
+
           bucket:
-            storageConfig.bucket,
+            input.storageConfig.bucket,
+
           storagePaths: [
             formation.privatePdfPath,
           ],
         });
 
-      /*
-       * Une erreur de nettoyage de l'ancien fichier ne doit pas
-       * invalider le nouvel upload déjà correctement enregistré.
-       *
-       * On journalise l'incident pour pouvoir nettoyer le fichier
-       * orphelin ultérieurement.
-       */
       if (!deleteOldResult.ok) {
         console.error(
           "[ADMIN_FORMATION_OLD_PDF_DELETE_FAILED]",
@@ -314,10 +870,6 @@ export async function POST(
         );
       }
     }
-
-    // ========================================================================
-    // RÉPONSE
-    // ========================================================================
 
     return NextResponse.json(
       {
@@ -360,16 +912,18 @@ export async function POST(
 
 /**
  * ============================================================================
- * DELETE /api/admin/formations/[formationId]/pdf
+ * DELETE
  * ============================================================================
  *
- * Supprime le PDF privé d'une formation.
+ * Nouveau système :
+ * DELETE ?fileId=xxx
  *
- * La base est mise à jour avant le nettoyage Storage afin que
- * l'application cesse immédiatement de considérer le PDF comme actif.
+ * Ancien système :
+ * DELETE sans fileId
  */
+
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: RouteContext,
 ) {
   const session = await getAdminSession();
@@ -391,7 +945,7 @@ export async function DELETE(
 
   if (!storageConfig.ok) {
     console.error(
-      "[ADMIN_FORMATION_PDF_CONFIG]",
+      "[ADMIN_FORMATION_FILES_CONFIG]",
       storageConfig.error,
     );
 
@@ -401,10 +955,171 @@ export async function DELETE(
     );
   }
 
+  const requestUrl = new URL(request.url);
+
+  const fileId = cleanString(
+    requestUrl.searchParams.get("fileId"),
+  );
+
+  if (fileId) {
+    return deleteCourseFile({
+      formationId,
+      fileId,
+      storageConfig,
+    });
+  }
+
+  return deleteLegacyPdf({
+    formationId,
+    storageConfig,
+  });
+}
+
+/**
+ * ============================================================================
+ * DELETE COURSE FILE
+ * ============================================================================
+ */
+
+async function deleteCourseFile(input: {
+  formationId: string;
+  fileId: string;
+  storageConfig: StorageConfigSuccess;
+}) {
+  try {
+    /**
+     * Le courseId fait partie de la recherche.
+     *
+     * Un identifiant de fichier appartenant à une autre formation
+     * ne peut donc jamais être supprimé via cette route.
+     */
+    const file = await db.courseFile.findFirst({
+      where: {
+        id: input.fileId,
+        courseId: input.formationId,
+      },
+
+      select: {
+        id: true,
+        courseId: true,
+        name: true,
+        path: true,
+      },
+    });
+
+    if (!file) {
+      return errorResponse(
+        "Fichier privé introuvable.",
+        404,
+      );
+    }
+
+    /**
+     * PostgreSQL est mis à jour en premier.
+     *
+     * Dès que cette suppression réussit, le fichier ne fait plus partie
+     * des ressources actives de la formation.
+     */
+    await db.courseFile.delete({
+      where: {
+        id: file.id,
+      },
+    });
+
+    const deleteResult =
+      await deletePrivateFilesFromSupabase({
+        supabaseUrl:
+          input.storageConfig.supabaseUrl,
+
+        secretKey:
+          input.storageConfig.secretKey,
+
+        bucket:
+          input.storageConfig.bucket,
+
+        storagePaths: [
+          file.path,
+        ],
+      });
+
+    if (!deleteResult.ok) {
+      console.error(
+        "[ADMIN_FORMATION_FILE_DELETE_STORAGE_FAILED]",
+        {
+          formationId:
+            input.formationId,
+
+          fileId:
+            file.id,
+
+          path:
+            file.path,
+
+          error:
+            deleteResult.error,
+        },
+      );
+
+      return NextResponse.json(
+        {
+          success: true,
+
+          message:
+            "Le fichier a été retiré de la formation. Le nettoyage du stockage devra être réessayé.",
+
+          deletedFileId:
+            file.id,
+
+          storageCleanupPending: true,
+        },
+        {
+          status: 200,
+          headers: noStoreHeaders(),
+        },
+      );
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+
+        message:
+          `Le fichier « ${file.name} » a été supprimé avec succès.`,
+
+        deletedFileId:
+          file.id,
+
+        storageCleanupPending: false,
+      },
+      {
+        status: 200,
+        headers: noStoreHeaders(),
+      },
+    );
+  } catch (error) {
+    console.error(
+      "[ADMIN_FORMATION_FILE_DELETE]",
+      error,
+    );
+
+    return serverError();
+  }
+}
+
+/**
+ * ============================================================================
+ * DELETE LEGACY PDF
+ * ============================================================================
+ */
+
+async function deleteLegacyPdf(input: {
+  formationId: string;
+  storageConfig: StorageConfigSuccess;
+}) {
   try {
     const formation = await db.course.findUnique({
       where: {
-        id: formationId,
+        id: input.formationId,
       },
 
       select: {
@@ -424,8 +1139,11 @@ export async function DELETE(
       return NextResponse.json(
         {
           success: true,
+
           message:
-            "Aucun PDF privé n'est associé à cette formation.",
+            "Aucun PDF privé historique n'est associé à cette formation.",
+
+          storageCleanupPending: false,
         },
         {
           status: 200,
@@ -437,9 +1155,6 @@ export async function DELETE(
     const oldPath =
       formation.privatePdfPath;
 
-    /*
-     * On retire d'abord la référence en base.
-     */
     await db.course.update({
       where: {
         id: formation.id,
@@ -452,17 +1167,17 @@ export async function DELETE(
       },
     });
 
-    /*
-     * Puis on nettoie Storage.
-     */
     const deleteResult =
-      await deletePrivatePdfFromSupabase({
+      await deletePrivateFilesFromSupabase({
         supabaseUrl:
-          storageConfig.supabaseUrl,
+          input.storageConfig.supabaseUrl,
+
         secretKey:
-          storageConfig.secretKey,
+          input.storageConfig.secretKey,
+
         bucket:
-          storageConfig.bucket,
+          input.storageConfig.bucket,
+
         storagePaths: [
           oldPath,
         ],
@@ -483,11 +1198,6 @@ export async function DELETE(
         },
       );
 
-      /*
-       * La référence a déjà été supprimée de PostgreSQL.
-       * Le fichier restant est donc seulement un fichier orphelin
-       * et n'est plus considéré comme contenu actif.
-       */
       return NextResponse.json(
         {
           success: true,
@@ -509,7 +1219,7 @@ export async function DELETE(
         success: true,
 
         message:
-          "Le PDF privé a été supprimé avec succès.",
+          "Le PDF privé historique a été supprimé avec succès.",
 
         storageCleanupPending: false,
       },
@@ -528,33 +1238,24 @@ export async function DELETE(
   }
 }
 
-// ============================================================================
-// ROUTE PARAMS
-// ============================================================================
+/**
+ * ============================================================================
+ * FILE VALIDATION
+ * ============================================================================
+ */
 
-async function getFormationId(
-  context: RouteContext,
-) {
-  try {
-    const params = await context.params;
-
-    return cleanString(
-      params.formationId,
-    );
-  } catch {
-    return "";
-  }
-}
-
-// ============================================================================
-// PDF VALIDATION
-// ============================================================================
-
-async function validatePdf(
+async function validateCourseFile(
   file: File,
 ): Promise<
   | {
       ok: true;
+      type: CourseFileTypeValue;
+      extension:
+        | ".pdf"
+        | ".doc"
+        | ".docx"
+        | ".zip";
+      mimeType: string;
     }
   | {
       ok: false;
@@ -565,80 +1266,209 @@ async function validatePdf(
     return {
       ok: false,
       message:
-        "Le fichier PDF est vide.",
+        "Le fichier envoyé est vide.",
     };
   }
 
-  if (file.size > MAX_PDF_SIZE) {
+  const fileName =
+    file.name.trim().toLowerCase();
+
+  const extension =
+    getSupportedExtension(fileName);
+
+  if (!extension) {
+    return {
+      ok: false,
+      message:
+        "Format non autorisé. Les formats acceptés sont PDF, DOC, DOCX et ZIP.",
+    };
+  }
+
+  const type =
+    getCourseFileType(extension);
+
+  const maxSize =
+    getMaximumFileSize(type);
+
+  if (file.size > maxSize) {
     return {
       ok: false,
 
       message:
-        "Le PDF ne doit pas dépasser 25 Mo.",
+        type === "ZIP"
+          ? `Le fichier « ${file.name} » ne doit pas dépasser 100 Mo.`
+          : `Le fichier « ${file.name} » ne doit pas dépasser 25 Mo.`,
     };
   }
 
-  /*
-   * Le navigateur fournit normalement application/pdf.
+  const mimeValidation =
+    validateMimeType(
+      file.type,
+      extension,
+    );
+
+  if (!mimeValidation.ok) {
+    return mimeValidation;
+  }
+
+  /**
+   * On vérifie également la signature binaire.
    *
-   * Certains navigateurs peuvent cependant envoyer un type vide.
-   * On autorise donc le type vide uniquement parce que nous vérifions
-   * également la signature réelle du fichier juste après.
+   * Modifier uniquement l'extension du fichier ne suffit donc pas.
    */
+  const signatureValidation =
+    await validateFileSignature(
+      file,
+      extension,
+    );
+
+  if (!signatureValidation.ok) {
+    return signatureValidation;
+  }
+
+  return {
+    ok: true,
+    type,
+    extension,
+    mimeType:
+      normalizeMimeType(
+        file.type,
+        extension,
+      ),
+  };
+}
+
+function getSupportedExtension(
+  fileName: string,
+):
+  | ".pdf"
+  | ".doc"
+  | ".docx"
+  | ".zip"
+  | null {
+  if (fileName.endsWith(".pdf")) {
+    return ".pdf";
+  }
+
+  if (fileName.endsWith(".docx")) {
+    return ".docx";
+  }
+
+  if (fileName.endsWith(".doc")) {
+    return ".doc";
+  }
+
+  if (fileName.endsWith(".zip")) {
+    return ".zip";
+  }
+
+  return null;
+}
+
+function getCourseFileType(
+  extension:
+    | ".pdf"
+    | ".doc"
+    | ".docx"
+    | ".zip",
+): CourseFileTypeValue {
+  switch (extension) {
+    case ".pdf":
+      return "PDF";
+
+    case ".doc":
+    case ".docx":
+      return "WORD";
+
+    case ".zip":
+      return "ZIP";
+  }
+}
+
+function getMaximumFileSize(
+  type: CourseFileTypeValue,
+) {
+  switch (type) {
+    case "PDF":
+      return MAX_PDF_SIZE;
+
+    case "WORD":
+      return MAX_WORD_SIZE;
+
+    case "ZIP":
+      return MAX_ZIP_SIZE;
+  }
+}
+
+/**
+ * ============================================================================
+ * MIME VALIDATION
+ * ============================================================================
+ */
+
+function validateMimeType(
+  mimeType: string,
+  extension:
+    | ".pdf"
+    | ".doc"
+    | ".docx"
+    | ".zip",
+):
+  | {
+      ok: true;
+    }
+  | {
+      ok: false;
+      message: string;
+    } {
+  /**
+   * Certains navigateurs peuvent envoyer un MIME vide.
+   *
+   * Cela reste accepté uniquement parce que la signature réelle du fichier
+   * est également vérifiée.
+   */
+  if (!mimeType) {
+    return {
+      ok: true,
+    };
+  }
+
+  const normalized =
+    mimeType.trim().toLowerCase();
+
   if (
-    file.type &&
-    file.type.toLowerCase() !==
-      PDF_MIME_TYPE
+    extension === ".pdf" &&
+    normalized !== PDF_MIME_TYPE
   ) {
     return {
       ok: false,
-
       message:
-        "Seuls les fichiers PDF sont autorisés.",
+        "Le fichier PDF possède un type MIME invalide.",
     };
   }
 
   if (
-    !file.name
-      .toLowerCase()
-      .endsWith(".pdf")
+    (extension === ".doc" ||
+      extension === ".docx") &&
+    !WORD_MIME_TYPES.has(normalized) &&
+    normalized !==
+      "application/octet-stream"
   ) {
     return {
       ok: false,
-
       message:
-        "Le fichier doit avoir l'extension .pdf.",
+        "Le document Word possède un type MIME invalide.",
     };
   }
 
-  /*
-   * Vérification de la signature PDF.
-   *
-   * Un simple changement d'extension vers ".pdf"
-   * ne suffit donc pas.
-   */
-  const headerBuffer =
-    await file
-      .slice(0, 5)
-      .arrayBuffer();
-
-  const header =
-    new Uint8Array(headerBuffer);
-
-  const isPdfSignature =
-    header.length === 5 &&
-    header[0] === 0x25 &&
-    header[1] === 0x50 &&
-    header[2] === 0x44 &&
-    header[3] === 0x46 &&
-    header[4] === 0x2d;
-
-  if (!isPdfSignature) {
+  if (
+    extension === ".zip" &&
+    !ZIP_MIME_TYPES.has(normalized)
+  ) {
     return {
       ok: false,
-
       message:
-        "Le fichier envoyé n'est pas un PDF valide.",
+        "Le fichier ZIP possède un type MIME invalide.",
     };
   }
 
@@ -647,51 +1477,228 @@ async function validatePdf(
   };
 }
 
-// ============================================================================
-// FILE NAME
-// ============================================================================
+function normalizeMimeType(
+  mimeType: string,
+  extension:
+    | ".pdf"
+    | ".doc"
+    | ".docx"
+    | ".zip",
+) {
+  const normalized =
+    mimeType.trim().toLowerCase();
+
+  if (normalized) {
+    return normalized;
+  }
+
+  switch (extension) {
+    case ".pdf":
+      return PDF_MIME_TYPE;
+
+    case ".doc":
+      return "application/msword";
+
+    case ".docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+    case ".zip":
+      return "application/zip";
+  }
+}
+
+/**
+ * ============================================================================
+ * BINARY SIGNATURE VALIDATION
+ * ============================================================================
+ */
+
+async function validateFileSignature(
+  file: File,
+  extension:
+    | ".pdf"
+    | ".doc"
+    | ".docx"
+    | ".zip",
+): Promise<
+  | {
+      ok: true;
+    }
+  | {
+      ok: false;
+      message: string;
+    }
+> {
+  const headerBuffer =
+    await file
+      .slice(0, 8)
+      .arrayBuffer();
+
+  const header =
+    new Uint8Array(headerBuffer);
+
+  if (extension === ".pdf") {
+    const valid =
+      header.length >= 5 &&
+      header[0] === 0x25 &&
+      header[1] === 0x50 &&
+      header[2] === 0x44 &&
+      header[3] === 0x46 &&
+      header[4] === 0x2d;
+
+    return valid
+      ? {
+          ok: true,
+        }
+      : {
+          ok: false,
+          message:
+            `Le fichier « ${file.name} » n'est pas un PDF valide.`,
+        };
+  }
+
+  if (extension === ".doc") {
+    /**
+     * Ancien format Microsoft Compound File Binary Format.
+     *
+     * Signature :
+     * D0 CF 11 E0 A1 B1 1A E1
+     */
+    const valid =
+      header.length >= 8 &&
+      header[0] === 0xd0 &&
+      header[1] === 0xcf &&
+      header[2] === 0x11 &&
+      header[3] === 0xe0 &&
+      header[4] === 0xa1 &&
+      header[5] === 0xb1 &&
+      header[6] === 0x1a &&
+      header[7] === 0xe1;
+
+    return valid
+      ? {
+          ok: true,
+        }
+      : {
+          ok: false,
+          message:
+            `Le fichier « ${file.name} » n'est pas un document Word .doc valide.`,
+        };
+  }
+
+  /**
+   * DOCX et ZIP sont tous les deux des conteneurs ZIP.
+   *
+   * Signatures ZIP courantes :
+   * - 50 4B 03 04
+   * - 50 4B 05 06
+   * - 50 4B 07 08
+   */
+  const validZipSignature =
+    header.length >= 4 &&
+    header[0] === 0x50 &&
+    header[1] === 0x4b &&
+    (
+      (
+        header[2] === 0x03 &&
+        header[3] === 0x04
+      ) ||
+      (
+        header[2] === 0x05 &&
+        header[3] === 0x06
+      ) ||
+      (
+        header[2] === 0x07 &&
+        header[3] === 0x08
+      )
+    );
+
+  if (!validZipSignature) {
+    return {
+      ok: false,
+
+      message:
+        extension === ".docx"
+          ? `Le fichier « ${file.name} » n'est pas un document Word .docx valide.`
+          : `Le fichier « ${file.name} » n'est pas une archive ZIP valide.`,
+    };
+  }
+
+  return {
+    ok: true,
+  };
+}
+
+/**
+ * ============================================================================
+ * FILE NAME
+ * ============================================================================
+ */
 
 function sanitizeOriginalFileName(
   fileName: string,
+  extension:
+    | ".pdf"
+    | ".doc"
+    | ".docx"
+    | ".zip",
 ) {
   const trimmed =
     fileName.trim();
 
+  const fallback =
+    `ressource${extension}`;
+
   if (!trimmed) {
-    return "formation.pdf";
+    return fallback;
   }
 
-  /*
-   * On retire les caractères de contrôle et les séparateurs
-   * de chemin avant d'enregistrer le nom d'affichage.
+  /**
+   * Retrait :
+   * - caractères de contrôle ;
+   * - slash ;
+   * - backslash ;
+   * - caractères susceptibles de manipuler un chemin.
    */
   const sanitized = trimmed
-    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .replace(
+      /[\u0000-\u001F\u007F]/g,
+      "",
+    )
     .replace(/[\\/]/g, "-")
+    .trim()
     .slice(0, 255);
 
   if (!sanitized) {
-    return "formation.pdf";
+    return fallback;
   }
 
-  return sanitized
-    .toLowerCase()
-    .endsWith(".pdf")
-    ? sanitized
-    : `${sanitized}.pdf`;
+  if (
+    sanitized
+      .toLowerCase()
+      .endsWith(extension)
+  ) {
+    return sanitized;
+  }
+
+  return `${sanitized}${extension}`;
 }
 
-// ============================================================================
-// SUPABASE CONFIG
-// ============================================================================
+/**
+ * ============================================================================
+ * SUPABASE CONFIG
+ * ============================================================================
+ */
+
+type StorageConfigSuccess = {
+  ok: true;
+  supabaseUrl: string;
+  secretKey: string;
+  bucket: string;
+};
 
 function getStorageConfig():
-  | {
-      ok: true;
-      supabaseUrl: string;
-      secretKey: string;
-      bucket: string;
-    }
+  | StorageConfigSuccess
   | {
       ok: false;
       error: string;
@@ -715,7 +1722,6 @@ function getStorageConfig():
   if (!supabaseUrl) {
     return {
       ok: false,
-
       error:
         "SUPABASE_URL est manquant.",
     };
@@ -724,7 +1730,6 @@ function getStorageConfig():
   if (!isHttpsUrl(supabaseUrl)) {
     return {
       ok: false,
-
       error:
         "SUPABASE_URL est invalide.",
     };
@@ -733,7 +1738,6 @@ function getStorageConfig():
   if (!secretKey) {
     return {
       ok: false,
-
       error:
         "SUPABASE_SECRET_KEY est manquant.",
     };
@@ -742,7 +1746,6 @@ function getStorageConfig():
   if (!bucket) {
     return {
       ok: false,
-
       error:
         "SUPABASE_COURSE_FILES_BUCKET est manquant.",
     };
@@ -756,17 +1759,20 @@ function getStorageConfig():
   };
 }
 
-// ============================================================================
-// SUPABASE — UPLOAD
-// ============================================================================
+/**
+ * ============================================================================
+ * SUPABASE — UPLOAD
+ * ============================================================================
+ */
 
-async function uploadPrivatePdfToSupabase(
+async function uploadPrivateFileToSupabase(
   input: {
     supabaseUrl: string;
     secretKey: string;
     bucket: string;
     storagePath: string;
     bytes: Uint8Array;
+    contentType: string;
   },
 ): Promise<
   | {
@@ -798,20 +1804,17 @@ async function uploadPrivatePdfToSupabase(
             input.secretKey,
 
           "Content-Type":
-            PDF_MIME_TYPE,
+            input.contentType,
 
-          /*
-           * Le chemin généré est unique.
-           * On ne remplace donc jamais silencieusement
-           * un objet existant.
-           */
           "x-upsert": "false",
 
           "Cache-Control":
             "no-store",
         },
 
-        body: Buffer.from(input.bytes),
+        body:
+          Buffer.from(input.bytes),
+
         cache: "no-store",
       },
     );
@@ -819,6 +1822,7 @@ async function uploadPrivatePdfToSupabase(
     if (!response.ok) {
       return {
         ok: false,
+
         error:
           await readSupabaseError(
             response,
@@ -846,11 +1850,13 @@ async function uploadPrivatePdfToSupabase(
   }
 }
 
-// ============================================================================
-// SUPABASE — DELETE
-// ============================================================================
+/**
+ * ============================================================================
+ * SUPABASE — DELETE
+ * ============================================================================
+ */
 
-async function deletePrivatePdfFromSupabase(
+async function deletePrivateFilesFromSupabase(
   input: {
     supabaseUrl: string;
     secretKey: string;
@@ -866,7 +1872,16 @@ async function deletePrivatePdfFromSupabase(
       error: SupabaseStorageError;
     }
 > {
-  if (input.storagePaths.length === 0) {
+  const uniqueStoragePaths =
+    Array.from(
+      new Set(
+        input.storagePaths
+          .map((path) => path.trim())
+          .filter(Boolean),
+      ),
+    );
+
+  if (uniqueStoragePaths.length === 0) {
     return {
       ok: true,
     };
@@ -900,7 +1915,7 @@ async function deletePrivatePdfFromSupabase(
 
         body: JSON.stringify({
           prefixes:
-            input.storagePaths,
+            uniqueStoragePaths,
         }),
 
         cache: "no-store",
@@ -938,9 +1953,44 @@ async function deletePrivatePdfFromSupabase(
   }
 }
 
-// ============================================================================
-// SUPABASE — URL
-// ============================================================================
+async function rollbackUploadedFiles(
+  input: {
+    storageConfig: StorageConfigSuccess;
+    storagePaths: string[];
+  },
+) {
+  if (input.storagePaths.length === 0) {
+    return;
+  }
+
+  const rollbackResult =
+    await deletePrivateFilesFromSupabase({
+      supabaseUrl:
+        input.storageConfig.supabaseUrl,
+
+      secretKey:
+        input.storageConfig.secretKey,
+
+      bucket:
+        input.storageConfig.bucket,
+
+      storagePaths:
+        input.storagePaths,
+    });
+
+  if (!rollbackResult.ok) {
+    console.error(
+      "[ADMIN_FORMATION_FILES_ROLLBACK_FAILED]",
+      rollbackResult.error,
+    );
+  }
+}
+
+/**
+ * ============================================================================
+ * SUPABASE — URL
+ * ============================================================================
+ */
 
 function createSupabaseObjectEndpoint(
   supabaseUrl: string,
@@ -966,9 +2016,11 @@ function createSupabaseObjectEndpoint(
   );
 }
 
-// ============================================================================
-// SUPABASE — ERROR
-// ============================================================================
+/**
+ * ============================================================================
+ * SUPABASE — ERROR
+ * ============================================================================
+ */
 
 async function readSupabaseError(
   response: Response,
@@ -1006,9 +2058,32 @@ async function readSupabaseError(
   }
 }
 
-// ============================================================================
-// REQUEST
-// ============================================================================
+/**
+ * ============================================================================
+ * ROUTE PARAMS
+ * ============================================================================
+ */
+
+async function getFormationId(
+  context: RouteContext,
+) {
+  try {
+    const params =
+      await context.params;
+
+    return cleanString(
+      params.formationId,
+    );
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * ============================================================================
+ * REQUEST
+ * ============================================================================
+ */
 
 function isMultipartRequest(
   request: Request,
@@ -1023,25 +2098,32 @@ function isMultipartRequest(
   );
 }
 
-// ============================================================================
-// URL VALIDATION
-// ============================================================================
+/**
+ * ============================================================================
+ * URL VALIDATION
+ * ============================================================================
+ */
 
 function isHttpsUrl(
   value: string,
 ) {
   try {
-    const url = new URL(value);
+    const url =
+      new URL(value);
 
-    return url.protocol === "https:";
+    return (
+      url.protocol === "https:"
+    );
   } catch {
     return false;
   }
 }
 
-// ============================================================================
-// STRING
-// ============================================================================
+/**
+ * ============================================================================
+ * STRING
+ * ============================================================================
+ */
 
 function cleanString(
   value: unknown,
@@ -1051,9 +2133,11 @@ function cleanString(
     : "";
 }
 
-// ============================================================================
-// RESPONSES
-// ============================================================================
+/**
+ * ============================================================================
+ * RESPONSES
+ * ============================================================================
+ */
 
 function validationError(
   field: string,

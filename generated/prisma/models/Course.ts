@@ -310,6 +310,7 @@ export type CourseWhereInput = {
   updatedAt?: Prisma.DateTimeFilter<"Course"> | Date | string
   images?: Prisma.CourseImageListRelationFilter
   descriptionImages?: Prisma.CourseDescriptionImageListRelationFilter
+  files?: Prisma.CourseFileListRelationFilter
   modules?: Prisma.CourseModuleListRelationFilter
   orderItems?: Prisma.OrderItemListRelationFilter
   enrollments?: Prisma.EnrollmentListRelationFilter
@@ -336,6 +337,7 @@ export type CourseOrderByWithRelationInput = {
   updatedAt?: Prisma.SortOrder
   images?: Prisma.CourseImageOrderByRelationAggregateInput
   descriptionImages?: Prisma.CourseDescriptionImageOrderByRelationAggregateInput
+  files?: Prisma.CourseFileOrderByRelationAggregateInput
   modules?: Prisma.CourseModuleOrderByRelationAggregateInput
   orderItems?: Prisma.OrderItemOrderByRelationAggregateInput
   enrollments?: Prisma.EnrollmentOrderByRelationAggregateInput
@@ -365,6 +367,7 @@ export type CourseWhereUniqueInput = Prisma.AtLeast<{
   updatedAt?: Prisma.DateTimeFilter<"Course"> | Date | string
   images?: Prisma.CourseImageListRelationFilter
   descriptionImages?: Prisma.CourseDescriptionImageListRelationFilter
+  files?: Prisma.CourseFileListRelationFilter
   modules?: Prisma.CourseModuleListRelationFilter
   orderItems?: Prisma.OrderItemListRelationFilter
   enrollments?: Prisma.EnrollmentListRelationFilter
@@ -437,6 +440,7 @@ export type CourseCreateInput = {
   updatedAt?: Date | string
   images?: Prisma.CourseImageCreateNestedManyWithoutCourseInput
   descriptionImages?: Prisma.CourseDescriptionImageCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileCreateNestedManyWithoutCourseInput
   modules?: Prisma.CourseModuleCreateNestedManyWithoutCourseInput
   orderItems?: Prisma.OrderItemCreateNestedManyWithoutCourseInput
   enrollments?: Prisma.EnrollmentCreateNestedManyWithoutCourseInput
@@ -463,6 +467,7 @@ export type CourseUncheckedCreateInput = {
   updatedAt?: Date | string
   images?: Prisma.CourseImageUncheckedCreateNestedManyWithoutCourseInput
   descriptionImages?: Prisma.CourseDescriptionImageUncheckedCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileUncheckedCreateNestedManyWithoutCourseInput
   modules?: Prisma.CourseModuleUncheckedCreateNestedManyWithoutCourseInput
   orderItems?: Prisma.OrderItemUncheckedCreateNestedManyWithoutCourseInput
   enrollments?: Prisma.EnrollmentUncheckedCreateNestedManyWithoutCourseInput
@@ -489,6 +494,7 @@ export type CourseUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   images?: Prisma.CourseImageUpdateManyWithoutCourseNestedInput
   descriptionImages?: Prisma.CourseDescriptionImageUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUpdateManyWithoutCourseNestedInput
   modules?: Prisma.CourseModuleUpdateManyWithoutCourseNestedInput
   orderItems?: Prisma.OrderItemUpdateManyWithoutCourseNestedInput
   enrollments?: Prisma.EnrollmentUpdateManyWithoutCourseNestedInput
@@ -515,6 +521,7 @@ export type CourseUncheckedUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   images?: Prisma.CourseImageUncheckedUpdateManyWithoutCourseNestedInput
   descriptionImages?: Prisma.CourseDescriptionImageUncheckedUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUncheckedUpdateManyWithoutCourseNestedInput
   modules?: Prisma.CourseModuleUncheckedUpdateManyWithoutCourseNestedInput
   orderItems?: Prisma.OrderItemUncheckedUpdateManyWithoutCourseNestedInput
   enrollments?: Prisma.EnrollmentUncheckedUpdateManyWithoutCourseNestedInput
@@ -704,6 +711,20 @@ export type CourseUpdateOneRequiredWithoutDescriptionImagesNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.CourseUpdateToOneWithWhereWithoutDescriptionImagesInput, Prisma.CourseUpdateWithoutDescriptionImagesInput>, Prisma.CourseUncheckedUpdateWithoutDescriptionImagesInput>
 }
 
+export type CourseCreateNestedOneWithoutFilesInput = {
+  create?: Prisma.XOR<Prisma.CourseCreateWithoutFilesInput, Prisma.CourseUncheckedCreateWithoutFilesInput>
+  connectOrCreate?: Prisma.CourseCreateOrConnectWithoutFilesInput
+  connect?: Prisma.CourseWhereUniqueInput
+}
+
+export type CourseUpdateOneRequiredWithoutFilesNestedInput = {
+  create?: Prisma.XOR<Prisma.CourseCreateWithoutFilesInput, Prisma.CourseUncheckedCreateWithoutFilesInput>
+  connectOrCreate?: Prisma.CourseCreateOrConnectWithoutFilesInput
+  upsert?: Prisma.CourseUpsertWithoutFilesInput
+  connect?: Prisma.CourseWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.CourseUpdateToOneWithWhereWithoutFilesInput, Prisma.CourseUpdateWithoutFilesInput>, Prisma.CourseUncheckedUpdateWithoutFilesInput>
+}
+
 export type CourseCreateNestedOneWithoutModulesInput = {
   create?: Prisma.XOR<Prisma.CourseCreateWithoutModulesInput, Prisma.CourseUncheckedCreateWithoutModulesInput>
   connectOrCreate?: Prisma.CourseCreateOrConnectWithoutModulesInput
@@ -794,6 +815,7 @@ export type CourseCreateWithoutImagesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   descriptionImages?: Prisma.CourseDescriptionImageCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileCreateNestedManyWithoutCourseInput
   modules?: Prisma.CourseModuleCreateNestedManyWithoutCourseInput
   orderItems?: Prisma.OrderItemCreateNestedManyWithoutCourseInput
   enrollments?: Prisma.EnrollmentCreateNestedManyWithoutCourseInput
@@ -819,6 +841,7 @@ export type CourseUncheckedCreateWithoutImagesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   descriptionImages?: Prisma.CourseDescriptionImageUncheckedCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileUncheckedCreateNestedManyWithoutCourseInput
   modules?: Prisma.CourseModuleUncheckedCreateNestedManyWithoutCourseInput
   orderItems?: Prisma.OrderItemUncheckedCreateNestedManyWithoutCourseInput
   enrollments?: Prisma.EnrollmentUncheckedCreateNestedManyWithoutCourseInput
@@ -860,6 +883,7 @@ export type CourseUpdateWithoutImagesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   descriptionImages?: Prisma.CourseDescriptionImageUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUpdateManyWithoutCourseNestedInput
   modules?: Prisma.CourseModuleUpdateManyWithoutCourseNestedInput
   orderItems?: Prisma.OrderItemUpdateManyWithoutCourseNestedInput
   enrollments?: Prisma.EnrollmentUpdateManyWithoutCourseNestedInput
@@ -885,6 +909,7 @@ export type CourseUncheckedUpdateWithoutImagesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   descriptionImages?: Prisma.CourseDescriptionImageUncheckedUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUncheckedUpdateManyWithoutCourseNestedInput
   modules?: Prisma.CourseModuleUncheckedUpdateManyWithoutCourseNestedInput
   orderItems?: Prisma.OrderItemUncheckedUpdateManyWithoutCourseNestedInput
   enrollments?: Prisma.EnrollmentUncheckedUpdateManyWithoutCourseNestedInput
@@ -910,6 +935,7 @@ export type CourseCreateWithoutDescriptionImagesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   images?: Prisma.CourseImageCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileCreateNestedManyWithoutCourseInput
   modules?: Prisma.CourseModuleCreateNestedManyWithoutCourseInput
   orderItems?: Prisma.OrderItemCreateNestedManyWithoutCourseInput
   enrollments?: Prisma.EnrollmentCreateNestedManyWithoutCourseInput
@@ -935,6 +961,7 @@ export type CourseUncheckedCreateWithoutDescriptionImagesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   images?: Prisma.CourseImageUncheckedCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileUncheckedCreateNestedManyWithoutCourseInput
   modules?: Prisma.CourseModuleUncheckedCreateNestedManyWithoutCourseInput
   orderItems?: Prisma.OrderItemUncheckedCreateNestedManyWithoutCourseInput
   enrollments?: Prisma.EnrollmentUncheckedCreateNestedManyWithoutCourseInput
@@ -976,6 +1003,7 @@ export type CourseUpdateWithoutDescriptionImagesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   images?: Prisma.CourseImageUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUpdateManyWithoutCourseNestedInput
   modules?: Prisma.CourseModuleUpdateManyWithoutCourseNestedInput
   orderItems?: Prisma.OrderItemUpdateManyWithoutCourseNestedInput
   enrollments?: Prisma.EnrollmentUpdateManyWithoutCourseNestedInput
@@ -1001,6 +1029,127 @@ export type CourseUncheckedUpdateWithoutDescriptionImagesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   images?: Prisma.CourseImageUncheckedUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUncheckedUpdateManyWithoutCourseNestedInput
+  modules?: Prisma.CourseModuleUncheckedUpdateManyWithoutCourseNestedInput
+  orderItems?: Prisma.OrderItemUncheckedUpdateManyWithoutCourseNestedInput
+  enrollments?: Prisma.EnrollmentUncheckedUpdateManyWithoutCourseNestedInput
+  supportRequests?: Prisma.SupportRequestUncheckedUpdateManyWithoutCourseNestedInput
+  deliveries?: Prisma.CourseDeliveryUncheckedUpdateManyWithoutCourseNestedInput
+}
+
+export type CourseCreateWithoutFilesInput = {
+  id?: string
+  title: string
+  shortDescription?: string | null
+  description: string
+  descriptionContent?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  price: number
+  promotionalPrice?: number | null
+  currency?: string
+  status?: $Enums.CourseStatus
+  publishedAt?: Date | string | null
+  privatePdfPath?: string | null
+  privatePdfName?: string | null
+  privatePdfSize?: number | null
+  privateAccessUrl?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  images?: Prisma.CourseImageCreateNestedManyWithoutCourseInput
+  descriptionImages?: Prisma.CourseDescriptionImageCreateNestedManyWithoutCourseInput
+  modules?: Prisma.CourseModuleCreateNestedManyWithoutCourseInput
+  orderItems?: Prisma.OrderItemCreateNestedManyWithoutCourseInput
+  enrollments?: Prisma.EnrollmentCreateNestedManyWithoutCourseInput
+  supportRequests?: Prisma.SupportRequestCreateNestedManyWithoutCourseInput
+  deliveries?: Prisma.CourseDeliveryCreateNestedManyWithoutCourseInput
+}
+
+export type CourseUncheckedCreateWithoutFilesInput = {
+  id?: string
+  title: string
+  shortDescription?: string | null
+  description: string
+  descriptionContent?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  price: number
+  promotionalPrice?: number | null
+  currency?: string
+  status?: $Enums.CourseStatus
+  publishedAt?: Date | string | null
+  privatePdfPath?: string | null
+  privatePdfName?: string | null
+  privatePdfSize?: number | null
+  privateAccessUrl?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  images?: Prisma.CourseImageUncheckedCreateNestedManyWithoutCourseInput
+  descriptionImages?: Prisma.CourseDescriptionImageUncheckedCreateNestedManyWithoutCourseInput
+  modules?: Prisma.CourseModuleUncheckedCreateNestedManyWithoutCourseInput
+  orderItems?: Prisma.OrderItemUncheckedCreateNestedManyWithoutCourseInput
+  enrollments?: Prisma.EnrollmentUncheckedCreateNestedManyWithoutCourseInput
+  supportRequests?: Prisma.SupportRequestUncheckedCreateNestedManyWithoutCourseInput
+  deliveries?: Prisma.CourseDeliveryUncheckedCreateNestedManyWithoutCourseInput
+}
+
+export type CourseCreateOrConnectWithoutFilesInput = {
+  where: Prisma.CourseWhereUniqueInput
+  create: Prisma.XOR<Prisma.CourseCreateWithoutFilesInput, Prisma.CourseUncheckedCreateWithoutFilesInput>
+}
+
+export type CourseUpsertWithoutFilesInput = {
+  update: Prisma.XOR<Prisma.CourseUpdateWithoutFilesInput, Prisma.CourseUncheckedUpdateWithoutFilesInput>
+  create: Prisma.XOR<Prisma.CourseCreateWithoutFilesInput, Prisma.CourseUncheckedCreateWithoutFilesInput>
+  where?: Prisma.CourseWhereInput
+}
+
+export type CourseUpdateToOneWithWhereWithoutFilesInput = {
+  where?: Prisma.CourseWhereInput
+  data: Prisma.XOR<Prisma.CourseUpdateWithoutFilesInput, Prisma.CourseUncheckedUpdateWithoutFilesInput>
+}
+
+export type CourseUpdateWithoutFilesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
+  shortDescription?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  description?: Prisma.StringFieldUpdateOperationsInput | string
+  descriptionContent?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  price?: Prisma.IntFieldUpdateOperationsInput | number
+  promotionalPrice?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  currency?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.EnumCourseStatusFieldUpdateOperationsInput | $Enums.CourseStatus
+  publishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  privatePdfPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  privatePdfName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  privatePdfSize?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  privateAccessUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  images?: Prisma.CourseImageUpdateManyWithoutCourseNestedInput
+  descriptionImages?: Prisma.CourseDescriptionImageUpdateManyWithoutCourseNestedInput
+  modules?: Prisma.CourseModuleUpdateManyWithoutCourseNestedInput
+  orderItems?: Prisma.OrderItemUpdateManyWithoutCourseNestedInput
+  enrollments?: Prisma.EnrollmentUpdateManyWithoutCourseNestedInput
+  supportRequests?: Prisma.SupportRequestUpdateManyWithoutCourseNestedInput
+  deliveries?: Prisma.CourseDeliveryUpdateManyWithoutCourseNestedInput
+}
+
+export type CourseUncheckedUpdateWithoutFilesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  title?: Prisma.StringFieldUpdateOperationsInput | string
+  shortDescription?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  description?: Prisma.StringFieldUpdateOperationsInput | string
+  descriptionContent?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  price?: Prisma.IntFieldUpdateOperationsInput | number
+  promotionalPrice?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  currency?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.EnumCourseStatusFieldUpdateOperationsInput | $Enums.CourseStatus
+  publishedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  privatePdfPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  privatePdfName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  privatePdfSize?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  privateAccessUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  images?: Prisma.CourseImageUncheckedUpdateManyWithoutCourseNestedInput
+  descriptionImages?: Prisma.CourseDescriptionImageUncheckedUpdateManyWithoutCourseNestedInput
   modules?: Prisma.CourseModuleUncheckedUpdateManyWithoutCourseNestedInput
   orderItems?: Prisma.OrderItemUncheckedUpdateManyWithoutCourseNestedInput
   enrollments?: Prisma.EnrollmentUncheckedUpdateManyWithoutCourseNestedInput
@@ -1027,6 +1176,7 @@ export type CourseCreateWithoutModulesInput = {
   updatedAt?: Date | string
   images?: Prisma.CourseImageCreateNestedManyWithoutCourseInput
   descriptionImages?: Prisma.CourseDescriptionImageCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileCreateNestedManyWithoutCourseInput
   orderItems?: Prisma.OrderItemCreateNestedManyWithoutCourseInput
   enrollments?: Prisma.EnrollmentCreateNestedManyWithoutCourseInput
   supportRequests?: Prisma.SupportRequestCreateNestedManyWithoutCourseInput
@@ -1052,6 +1202,7 @@ export type CourseUncheckedCreateWithoutModulesInput = {
   updatedAt?: Date | string
   images?: Prisma.CourseImageUncheckedCreateNestedManyWithoutCourseInput
   descriptionImages?: Prisma.CourseDescriptionImageUncheckedCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileUncheckedCreateNestedManyWithoutCourseInput
   orderItems?: Prisma.OrderItemUncheckedCreateNestedManyWithoutCourseInput
   enrollments?: Prisma.EnrollmentUncheckedCreateNestedManyWithoutCourseInput
   supportRequests?: Prisma.SupportRequestUncheckedCreateNestedManyWithoutCourseInput
@@ -1093,6 +1244,7 @@ export type CourseUpdateWithoutModulesInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   images?: Prisma.CourseImageUpdateManyWithoutCourseNestedInput
   descriptionImages?: Prisma.CourseDescriptionImageUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUpdateManyWithoutCourseNestedInput
   orderItems?: Prisma.OrderItemUpdateManyWithoutCourseNestedInput
   enrollments?: Prisma.EnrollmentUpdateManyWithoutCourseNestedInput
   supportRequests?: Prisma.SupportRequestUpdateManyWithoutCourseNestedInput
@@ -1118,6 +1270,7 @@ export type CourseUncheckedUpdateWithoutModulesInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   images?: Prisma.CourseImageUncheckedUpdateManyWithoutCourseNestedInput
   descriptionImages?: Prisma.CourseDescriptionImageUncheckedUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUncheckedUpdateManyWithoutCourseNestedInput
   orderItems?: Prisma.OrderItemUncheckedUpdateManyWithoutCourseNestedInput
   enrollments?: Prisma.EnrollmentUncheckedUpdateManyWithoutCourseNestedInput
   supportRequests?: Prisma.SupportRequestUncheckedUpdateManyWithoutCourseNestedInput
@@ -1143,6 +1296,7 @@ export type CourseCreateWithoutOrderItemsInput = {
   updatedAt?: Date | string
   images?: Prisma.CourseImageCreateNestedManyWithoutCourseInput
   descriptionImages?: Prisma.CourseDescriptionImageCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileCreateNestedManyWithoutCourseInput
   modules?: Prisma.CourseModuleCreateNestedManyWithoutCourseInput
   enrollments?: Prisma.EnrollmentCreateNestedManyWithoutCourseInput
   supportRequests?: Prisma.SupportRequestCreateNestedManyWithoutCourseInput
@@ -1168,6 +1322,7 @@ export type CourseUncheckedCreateWithoutOrderItemsInput = {
   updatedAt?: Date | string
   images?: Prisma.CourseImageUncheckedCreateNestedManyWithoutCourseInput
   descriptionImages?: Prisma.CourseDescriptionImageUncheckedCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileUncheckedCreateNestedManyWithoutCourseInput
   modules?: Prisma.CourseModuleUncheckedCreateNestedManyWithoutCourseInput
   enrollments?: Prisma.EnrollmentUncheckedCreateNestedManyWithoutCourseInput
   supportRequests?: Prisma.SupportRequestUncheckedCreateNestedManyWithoutCourseInput
@@ -1209,6 +1364,7 @@ export type CourseUpdateWithoutOrderItemsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   images?: Prisma.CourseImageUpdateManyWithoutCourseNestedInput
   descriptionImages?: Prisma.CourseDescriptionImageUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUpdateManyWithoutCourseNestedInput
   modules?: Prisma.CourseModuleUpdateManyWithoutCourseNestedInput
   enrollments?: Prisma.EnrollmentUpdateManyWithoutCourseNestedInput
   supportRequests?: Prisma.SupportRequestUpdateManyWithoutCourseNestedInput
@@ -1234,6 +1390,7 @@ export type CourseUncheckedUpdateWithoutOrderItemsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   images?: Prisma.CourseImageUncheckedUpdateManyWithoutCourseNestedInput
   descriptionImages?: Prisma.CourseDescriptionImageUncheckedUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUncheckedUpdateManyWithoutCourseNestedInput
   modules?: Prisma.CourseModuleUncheckedUpdateManyWithoutCourseNestedInput
   enrollments?: Prisma.EnrollmentUncheckedUpdateManyWithoutCourseNestedInput
   supportRequests?: Prisma.SupportRequestUncheckedUpdateManyWithoutCourseNestedInput
@@ -1259,6 +1416,7 @@ export type CourseCreateWithoutEnrollmentsInput = {
   updatedAt?: Date | string
   images?: Prisma.CourseImageCreateNestedManyWithoutCourseInput
   descriptionImages?: Prisma.CourseDescriptionImageCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileCreateNestedManyWithoutCourseInput
   modules?: Prisma.CourseModuleCreateNestedManyWithoutCourseInput
   orderItems?: Prisma.OrderItemCreateNestedManyWithoutCourseInput
   supportRequests?: Prisma.SupportRequestCreateNestedManyWithoutCourseInput
@@ -1284,6 +1442,7 @@ export type CourseUncheckedCreateWithoutEnrollmentsInput = {
   updatedAt?: Date | string
   images?: Prisma.CourseImageUncheckedCreateNestedManyWithoutCourseInput
   descriptionImages?: Prisma.CourseDescriptionImageUncheckedCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileUncheckedCreateNestedManyWithoutCourseInput
   modules?: Prisma.CourseModuleUncheckedCreateNestedManyWithoutCourseInput
   orderItems?: Prisma.OrderItemUncheckedCreateNestedManyWithoutCourseInput
   supportRequests?: Prisma.SupportRequestUncheckedCreateNestedManyWithoutCourseInput
@@ -1325,6 +1484,7 @@ export type CourseUpdateWithoutEnrollmentsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   images?: Prisma.CourseImageUpdateManyWithoutCourseNestedInput
   descriptionImages?: Prisma.CourseDescriptionImageUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUpdateManyWithoutCourseNestedInput
   modules?: Prisma.CourseModuleUpdateManyWithoutCourseNestedInput
   orderItems?: Prisma.OrderItemUpdateManyWithoutCourseNestedInput
   supportRequests?: Prisma.SupportRequestUpdateManyWithoutCourseNestedInput
@@ -1350,6 +1510,7 @@ export type CourseUncheckedUpdateWithoutEnrollmentsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   images?: Prisma.CourseImageUncheckedUpdateManyWithoutCourseNestedInput
   descriptionImages?: Prisma.CourseDescriptionImageUncheckedUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUncheckedUpdateManyWithoutCourseNestedInput
   modules?: Prisma.CourseModuleUncheckedUpdateManyWithoutCourseNestedInput
   orderItems?: Prisma.OrderItemUncheckedUpdateManyWithoutCourseNestedInput
   supportRequests?: Prisma.SupportRequestUncheckedUpdateManyWithoutCourseNestedInput
@@ -1375,6 +1536,7 @@ export type CourseCreateWithoutDeliveriesInput = {
   updatedAt?: Date | string
   images?: Prisma.CourseImageCreateNestedManyWithoutCourseInput
   descriptionImages?: Prisma.CourseDescriptionImageCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileCreateNestedManyWithoutCourseInput
   modules?: Prisma.CourseModuleCreateNestedManyWithoutCourseInput
   orderItems?: Prisma.OrderItemCreateNestedManyWithoutCourseInput
   enrollments?: Prisma.EnrollmentCreateNestedManyWithoutCourseInput
@@ -1400,6 +1562,7 @@ export type CourseUncheckedCreateWithoutDeliveriesInput = {
   updatedAt?: Date | string
   images?: Prisma.CourseImageUncheckedCreateNestedManyWithoutCourseInput
   descriptionImages?: Prisma.CourseDescriptionImageUncheckedCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileUncheckedCreateNestedManyWithoutCourseInput
   modules?: Prisma.CourseModuleUncheckedCreateNestedManyWithoutCourseInput
   orderItems?: Prisma.OrderItemUncheckedCreateNestedManyWithoutCourseInput
   enrollments?: Prisma.EnrollmentUncheckedCreateNestedManyWithoutCourseInput
@@ -1441,6 +1604,7 @@ export type CourseUpdateWithoutDeliveriesInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   images?: Prisma.CourseImageUpdateManyWithoutCourseNestedInput
   descriptionImages?: Prisma.CourseDescriptionImageUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUpdateManyWithoutCourseNestedInput
   modules?: Prisma.CourseModuleUpdateManyWithoutCourseNestedInput
   orderItems?: Prisma.OrderItemUpdateManyWithoutCourseNestedInput
   enrollments?: Prisma.EnrollmentUpdateManyWithoutCourseNestedInput
@@ -1466,6 +1630,7 @@ export type CourseUncheckedUpdateWithoutDeliveriesInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   images?: Prisma.CourseImageUncheckedUpdateManyWithoutCourseNestedInput
   descriptionImages?: Prisma.CourseDescriptionImageUncheckedUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUncheckedUpdateManyWithoutCourseNestedInput
   modules?: Prisma.CourseModuleUncheckedUpdateManyWithoutCourseNestedInput
   orderItems?: Prisma.OrderItemUncheckedUpdateManyWithoutCourseNestedInput
   enrollments?: Prisma.EnrollmentUncheckedUpdateManyWithoutCourseNestedInput
@@ -1491,6 +1656,7 @@ export type CourseCreateWithoutSupportRequestsInput = {
   updatedAt?: Date | string
   images?: Prisma.CourseImageCreateNestedManyWithoutCourseInput
   descriptionImages?: Prisma.CourseDescriptionImageCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileCreateNestedManyWithoutCourseInput
   modules?: Prisma.CourseModuleCreateNestedManyWithoutCourseInput
   orderItems?: Prisma.OrderItemCreateNestedManyWithoutCourseInput
   enrollments?: Prisma.EnrollmentCreateNestedManyWithoutCourseInput
@@ -1516,6 +1682,7 @@ export type CourseUncheckedCreateWithoutSupportRequestsInput = {
   updatedAt?: Date | string
   images?: Prisma.CourseImageUncheckedCreateNestedManyWithoutCourseInput
   descriptionImages?: Prisma.CourseDescriptionImageUncheckedCreateNestedManyWithoutCourseInput
+  files?: Prisma.CourseFileUncheckedCreateNestedManyWithoutCourseInput
   modules?: Prisma.CourseModuleUncheckedCreateNestedManyWithoutCourseInput
   orderItems?: Prisma.OrderItemUncheckedCreateNestedManyWithoutCourseInput
   enrollments?: Prisma.EnrollmentUncheckedCreateNestedManyWithoutCourseInput
@@ -1557,6 +1724,7 @@ export type CourseUpdateWithoutSupportRequestsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   images?: Prisma.CourseImageUpdateManyWithoutCourseNestedInput
   descriptionImages?: Prisma.CourseDescriptionImageUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUpdateManyWithoutCourseNestedInput
   modules?: Prisma.CourseModuleUpdateManyWithoutCourseNestedInput
   orderItems?: Prisma.OrderItemUpdateManyWithoutCourseNestedInput
   enrollments?: Prisma.EnrollmentUpdateManyWithoutCourseNestedInput
@@ -1582,6 +1750,7 @@ export type CourseUncheckedUpdateWithoutSupportRequestsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   images?: Prisma.CourseImageUncheckedUpdateManyWithoutCourseNestedInput
   descriptionImages?: Prisma.CourseDescriptionImageUncheckedUpdateManyWithoutCourseNestedInput
+  files?: Prisma.CourseFileUncheckedUpdateManyWithoutCourseNestedInput
   modules?: Prisma.CourseModuleUncheckedUpdateManyWithoutCourseNestedInput
   orderItems?: Prisma.OrderItemUncheckedUpdateManyWithoutCourseNestedInput
   enrollments?: Prisma.EnrollmentUncheckedUpdateManyWithoutCourseNestedInput
@@ -1596,6 +1765,7 @@ export type CourseUncheckedUpdateWithoutSupportRequestsInput = {
 export type CourseCountOutputType = {
   images: number
   descriptionImages: number
+  files: number
   modules: number
   orderItems: number
   enrollments: number
@@ -1606,6 +1776,7 @@ export type CourseCountOutputType = {
 export type CourseCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   images?: boolean | CourseCountOutputTypeCountImagesArgs
   descriptionImages?: boolean | CourseCountOutputTypeCountDescriptionImagesArgs
+  files?: boolean | CourseCountOutputTypeCountFilesArgs
   modules?: boolean | CourseCountOutputTypeCountModulesArgs
   orderItems?: boolean | CourseCountOutputTypeCountOrderItemsArgs
   enrollments?: boolean | CourseCountOutputTypeCountEnrollmentsArgs
@@ -1635,6 +1806,13 @@ export type CourseCountOutputTypeCountImagesArgs<ExtArgs extends runtime.Types.E
  */
 export type CourseCountOutputTypeCountDescriptionImagesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.CourseDescriptionImageWhereInput
+}
+
+/**
+ * CourseCountOutputType without action
+ */
+export type CourseCountOutputTypeCountFilesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.CourseFileWhereInput
 }
 
 /**
@@ -1692,6 +1870,7 @@ export type CourseSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs =
   updatedAt?: boolean
   images?: boolean | Prisma.Course$imagesArgs<ExtArgs>
   descriptionImages?: boolean | Prisma.Course$descriptionImagesArgs<ExtArgs>
+  files?: boolean | Prisma.Course$filesArgs<ExtArgs>
   modules?: boolean | Prisma.Course$modulesArgs<ExtArgs>
   orderItems?: boolean | Prisma.Course$orderItemsArgs<ExtArgs>
   enrollments?: boolean | Prisma.Course$enrollmentsArgs<ExtArgs>
@@ -1761,6 +1940,7 @@ export type CourseOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
 export type CourseInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   images?: boolean | Prisma.Course$imagesArgs<ExtArgs>
   descriptionImages?: boolean | Prisma.Course$descriptionImagesArgs<ExtArgs>
+  files?: boolean | Prisma.Course$filesArgs<ExtArgs>
   modules?: boolean | Prisma.Course$modulesArgs<ExtArgs>
   orderItems?: boolean | Prisma.Course$orderItemsArgs<ExtArgs>
   enrollments?: boolean | Prisma.Course$enrollmentsArgs<ExtArgs>
@@ -1776,6 +1956,7 @@ export type $CoursePayload<ExtArgs extends runtime.Types.Extensions.InternalArgs
   objects: {
     images: Prisma.$CourseImagePayload<ExtArgs>[]
     descriptionImages: Prisma.$CourseDescriptionImagePayload<ExtArgs>[]
+    files: Prisma.$CourseFilePayload<ExtArgs>[]
     modules: Prisma.$CourseModulePayload<ExtArgs>[]
     orderItems: Prisma.$OrderItemPayload<ExtArgs>[]
     enrollments: Prisma.$EnrollmentPayload<ExtArgs>[]
@@ -2195,6 +2376,7 @@ export interface Prisma__CourseClient<T, Null = never, ExtArgs extends runtime.T
   readonly [Symbol.toStringTag]: "PrismaPromise"
   images<T extends Prisma.Course$imagesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Course$imagesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$CourseImagePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   descriptionImages<T extends Prisma.Course$descriptionImagesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Course$descriptionImagesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$CourseDescriptionImagePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  files<T extends Prisma.Course$filesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Course$filesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$CourseFilePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   modules<T extends Prisma.Course$modulesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Course$modulesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$CourseModulePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   orderItems<T extends Prisma.Course$orderItemsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Course$orderItemsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$OrderItemPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   enrollments<T extends Prisma.Course$enrollmentsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Course$enrollmentsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$EnrollmentPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
@@ -2683,6 +2865,30 @@ export type Course$descriptionImagesArgs<ExtArgs extends runtime.Types.Extension
   take?: number
   skip?: number
   distinct?: Prisma.CourseDescriptionImageScalarFieldEnum | Prisma.CourseDescriptionImageScalarFieldEnum[]
+}
+
+/**
+ * Course.files
+ */
+export type Course$filesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the CourseFile
+   */
+  select?: Prisma.CourseFileSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the CourseFile
+   */
+  omit?: Prisma.CourseFileOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.CourseFileInclude<ExtArgs> | null
+  where?: Prisma.CourseFileWhereInput
+  orderBy?: Prisma.CourseFileOrderByWithRelationInput | Prisma.CourseFileOrderByWithRelationInput[]
+  cursor?: Prisma.CourseFileWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.CourseFileScalarFieldEnum | Prisma.CourseFileScalarFieldEnum[]
 }
 
 /**

@@ -403,7 +403,7 @@ async function getPaidOrderForDelivery(
                   id: true,
                   type: true,
                   name: true,
-                  path: true,
+                  storagePath: true,
                   mimeType: true,
                   size: true,
                   position: true,
@@ -1771,5 +1771,4 @@ export async function getOrderDeliveryStatus(
       ),
   };
 }
-
 

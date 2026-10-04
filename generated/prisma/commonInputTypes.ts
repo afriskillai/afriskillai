@@ -308,6 +308,23 @@ export type EnumCourseImageTypeWithAggregatesFilter<$PrismaModel = never> = {
   _max?: Prisma.NestedEnumCourseImageTypeFilter<$PrismaModel>
 }
 
+export type EnumCourseFileTypeFilter<$PrismaModel = never> = {
+  equals?: $Enums.CourseFileType | Prisma.EnumCourseFileTypeFieldRefInput<$PrismaModel>
+  in?: $Enums.CourseFileType[] | Prisma.ListEnumCourseFileTypeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.CourseFileType[] | Prisma.ListEnumCourseFileTypeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumCourseFileTypeFilter<$PrismaModel> | $Enums.CourseFileType
+}
+
+export type EnumCourseFileTypeWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.CourseFileType | Prisma.EnumCourseFileTypeFieldRefInput<$PrismaModel>
+  in?: $Enums.CourseFileType[] | Prisma.ListEnumCourseFileTypeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.CourseFileType[] | Prisma.ListEnumCourseFileTypeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumCourseFileTypeWithAggregatesFilter<$PrismaModel> | $Enums.CourseFileType
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumCourseFileTypeFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumCourseFileTypeFilter<$PrismaModel>
+}
+
 export type EnumLessonTypeFilter<$PrismaModel = never> = {
   equals?: $Enums.LessonType | Prisma.EnumLessonTypeFieldRefInput<$PrismaModel>
   in?: $Enums.LessonType[] | Prisma.ListEnumLessonTypeFieldRefInput<$PrismaModel>
@@ -752,6 +769,23 @@ export type NestedEnumCourseImageTypeWithAggregatesFilter<$PrismaModel = never> 
   _count?: Prisma.NestedIntFilter<$PrismaModel>
   _min?: Prisma.NestedEnumCourseImageTypeFilter<$PrismaModel>
   _max?: Prisma.NestedEnumCourseImageTypeFilter<$PrismaModel>
+}
+
+export type NestedEnumCourseFileTypeFilter<$PrismaModel = never> = {
+  equals?: $Enums.CourseFileType | Prisma.EnumCourseFileTypeFieldRefInput<$PrismaModel>
+  in?: $Enums.CourseFileType[] | Prisma.ListEnumCourseFileTypeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.CourseFileType[] | Prisma.ListEnumCourseFileTypeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumCourseFileTypeFilter<$PrismaModel> | $Enums.CourseFileType
+}
+
+export type NestedEnumCourseFileTypeWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.CourseFileType | Prisma.EnumCourseFileTypeFieldRefInput<$PrismaModel>
+  in?: $Enums.CourseFileType[] | Prisma.ListEnumCourseFileTypeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.CourseFileType[] | Prisma.ListEnumCourseFileTypeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumCourseFileTypeWithAggregatesFilter<$PrismaModel> | $Enums.CourseFileType
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumCourseFileTypeFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumCourseFileTypeFilter<$PrismaModel>
 }
 
 export type NestedEnumLessonTypeFilter<$PrismaModel = never> = {

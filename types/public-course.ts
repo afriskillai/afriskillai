@@ -20,6 +20,17 @@
  * - la page publique de détail d'une formation
  * - le rendu de la description enrichie
  * - la barre de commande
+ *
+ * La description enrichie peut contenir :
+ * - du texte ;
+ * - des titres ;
+ * - des listes ;
+ * - des citations ;
+ * - des images ;
+ * - des vidéos publiques de démonstration YouTube / Vimeo.
+ *
+ * Les vidéos restent décrites par des données structurées.
+ * Aucun HTML ou iframe arbitraire n'est stocké dans ces types.
  * ============================================================================
  */
 
@@ -52,6 +63,15 @@ export type PublicCoursePricing = {
  * Le format public reste volontairement indépendant de Prisma et de TipTap.
  * Les composants publics peuvent donc le lire sans importer une dépendance
  * d'administration.
+ *
+ * Les vidéos publiques de démonstration sont représentées par un nœud
+ * structuré "video".
+ *
+ * IMPORTANT :
+ * - aucun HTML arbitraire n'est nécessaire ;
+ * - aucun iframe fourni directement par l'utilisateur n'est nécessaire ;
+ * - le renderer public reste responsable de la validation finale ;
+ * - seules les plateformes explicitement prises en charge doivent être rendues.
  * ============================================================================
  */
 
@@ -64,6 +84,16 @@ export type PublicCourseDescriptionMarkType =
   | "strike"
   | "code"
   | "link";
+
+/**
+ * Fournisseurs vidéo explicitement supportés.
+ *
+ * Cette union volontairement fermée empêche l'utilisation d'une plateforme
+ * inconnue sans modification explicite du code.
+ */
+export type PublicCourseDescriptionVideoProvider =
+  | "youtube"
+  | "vimeo";
 
 /**
  * Types de nœuds actuellement supportés dans la description publique.
@@ -79,7 +109,8 @@ export type PublicCourseDescriptionNodeType =
   | "blockquote"
   | "hardBreak"
   | "horizontalRule"
-  | "image";
+  | "image"
+  | "video";
 
 /**
  * Attributs d'un lien présent dans une description.
@@ -102,16 +133,90 @@ export type PublicCourseDescriptionMark = {
  * Attributs pouvant être présents sur un nœud de description.
  *
  * Certains attributs ne concernent qu'un type de nœud :
- * - level : heading
- * - src / imageId / alt / title : image
+ *
+ * heading :
+ * - level
+ *
+ * image :
+ * - src
+ * - imageId
+ * - alt
+ * - title
+ *
+ * video :
+ * - provider
+ * - videoId
+ * - videoUrl
+ * - videoTitle
+ *
+ * Le renderer public ne doit jamais considérer ces attributs comme sûrs
+ * uniquement parce qu'ils correspondent à ce type TypeScript.
+ * Toute valeur venant de la base doit encore être validée au moment du rendu.
  */
 export type PublicCourseDescriptionNodeAttributes = {
+  /**
+   * Niveau d'un heading.
+   */
   level?: number | null;
 
+  /**
+   * URL publique d'une image intégrée.
+   */
   src?: string | null;
+
+  /**
+   * Identifiant interne éventuel de l'image.
+   */
   imageId?: string | null;
+
+  /**
+   * Texte alternatif d'une image.
+   */
   alt?: string | null;
+
+  /**
+   * Légende / titre éventuel d'une image.
+   */
   title?: string | null;
+
+  /**
+   * Plateforme de la vidéo publique.
+   *
+   * Exemple :
+   * - youtube
+   * - vimeo
+   */
+  provider?: PublicCourseDescriptionVideoProvider | null;
+
+  /**
+   * Identifiant normalisé de la vidéo sur la plateforme.
+   *
+   * Exemple YouTube :
+   * dQw4w9WgXcQ
+   *
+   * Exemple Vimeo :
+   * 123456789
+   */
+  videoId?: string | null;
+
+  /**
+   * URL originale validée au moment de l'insertion.
+   *
+   * Cette URL est conservée comme information structurée.
+   * Elle ne doit pas être utilisée directement comme src d'un iframe
+   * sans nouvelle validation dans le renderer public.
+   */
+  videoUrl?: string | null;
+
+  /**
+   * Titre public optionnel de la vidéo.
+   *
+   * Il peut notamment être utilisé pour :
+   * - l'accessibilité ;
+   * - le titre du lecteur ;
+   * - une future légende.
+   */
+  videoTitle?: string | null;
 };
 
 /**
@@ -223,6 +328,14 @@ export type PublicCourseDetail = PublicCourse & {
    *
    * Null pour une ancienne formation ou une formation qui ne possède
    * pas encore de description enrichie.
+   *
+   * Elle peut désormais contenir, dans leur ordre exact :
+   * - texte ;
+   * - titres ;
+   * - listes ;
+   * - citations ;
+   * - images ;
+   * - vidéos publiques de démonstration.
    */
   descriptionContent: PublicCourseDescriptionDocument | null;
 
@@ -556,6 +669,49 @@ export function getPublicCourseDescriptionImageAlt(
       image?.alt,
     ) ??
     `Illustration de la formation ${normalizeCourseTitle(
+      courseTitle,
+    )}`
+  );
+}
+
+/**
+ * ============================================================================
+ * HELPERS VIDÉOS DE DÉMONSTRATION
+ * ============================================================================
+ */
+
+/**
+ * Vérifie qu'une valeur correspond à un fournisseur
+ * vidéo explicitement pris en charge.
+ *
+ * Ce helper peut être utilisé par le renderer public afin
+ * de ne jamais considérer une valeur provenant de la base
+ * comme sûre uniquement grâce au typage TypeScript.
+ */
+export function isPublicCourseDescriptionVideoProvider(
+  value: unknown,
+): value is PublicCourseDescriptionVideoProvider {
+  return (
+    value === "youtube" ||
+    value === "vimeo"
+  );
+}
+
+/**
+ * Retourne un titre propre pour le lecteur d'une vidéo
+ * de démonstration.
+ *
+ * Priorité :
+ * 1. titre enregistré avec le nœud vidéo ;
+ * 2. titre construit à partir du nom de la formation.
+ */
+export function getPublicCourseDescriptionVideoTitle(
+  videoTitle: string | null | undefined,
+  courseTitle: string,
+): string {
+  return (
+    normalizeOptionalText(videoTitle) ??
+    `Vidéo de démonstration — ${normalizeCourseTitle(
       courseTitle,
     )}`
   );

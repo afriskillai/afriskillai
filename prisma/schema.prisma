@@ -117,6 +117,12 @@ enum TokenType {
   PASSWORD_RESET
 }
 
+enum CourseFileType {
+  PDF
+  WORD
+  ZIP
+}
+
 // ============================================================================
 // USER / CLIENT
 // ============================================================================
@@ -234,6 +240,7 @@ model Course {
 
   images            CourseImage[]
   descriptionImages CourseDescriptionImage[]
+  files             CourseFile[]
   modules           CourseModule[]
   orderItems        OrderItem[]
   enrollments       Enrollment[]
@@ -306,6 +313,46 @@ model CourseDescriptionImage {
 
   @@unique([courseId, position])
   @@index([courseId])
+}
+
+// ============================================================================
+// COURSE FILE
+// Fichiers privés délivrés uniquement après paiement confirmé
+// ============================================================================
+
+model CourseFile {
+  id String @id @default(cuid())
+
+  courseId String
+
+  // Type fonctionnel du fichier.
+  type CourseFileType
+
+  // Nom original / nom affiché au client.
+  name String
+
+  // Chemin dans le bucket Supabase PRIVÉ.
+  // Ne jamais stocker ici une URL publique permanente.
+  path String
+
+  // Taille du fichier en octets.
+  size Int
+
+  // Type MIME détecté et validé côté serveur.
+  mimeType String?
+
+  // Permet de conserver l'ordre des ressources.
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, position])
+  @@index([courseId])
+  @@index([courseId, type])
+  @@index([createdAt])
 }
 
 // ============================================================================

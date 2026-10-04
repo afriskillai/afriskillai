@@ -31,8 +31,8 @@ export type FormationFormValues = {
   privateAccessUrl: string;
 
   /**
-   * ConservÃ© pour compatibilitÃ© avec lâ€™ancienne architecture mono-PDF.
-   * Les nouvelles ressources privÃ©es utilisent CourseFile.
+   * Conservé pour compatibilité avec l’ancienne architecture mono-PDF.
+   * Les nouvelles ressources privées utilisent CourseFile.
    */
   privatePdfName: string;
 };
@@ -75,7 +75,7 @@ type ApiResponse = {
   descriptionImage?: ApiImage;
 
   /**
-   * Ancienne rÃ©ponse mono-PDF conservÃ©e pour compatibilitÃ©.
+   * Ancienne réponse mono-PDF conservée pour compatibilité.
    */
   pdf?: {
     id?: string | null;
@@ -146,14 +146,14 @@ export default function FormationForm({
   });
 
   /**
-   * Ressources sÃ©lectionnÃ©es localement mais pas encore envoyÃ©es.
+   * Ressources sélectionnées localement mais pas encore envoyées.
    */
   const [selectedPrivateFiles, setSelectedPrivateFiles] = useState<
     SelectedPrivateFile[]
   >([]);
 
   /**
-   * Ressources dÃ©jÃ  enregistrÃ©es cÃ´tÃ© serveur.
+   * Ressources déjà enregistrées côté serveur.
    */
   const [existingPrivateFiles, setExistingPrivateFiles] = useState<
     ApiPrivateCourseFile[]
@@ -170,29 +170,28 @@ export default function FormationForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   /*
-   * En crÃ©ation, cet identifiant reste null jusqu'au premier
-   * enregistrement ou jusqu'au premier upload d'une image intÃ©grÃ©e.
+   * En création, cet identifiant reste null jusqu'au premier
+   * enregistrement ou jusqu'au premier upload d'une image intégrée.
    *
-   * DÃ¨s qu'une formation existe rÃ©ellement en base, on conserve son ID
-   * afin de ne jamais crÃ©er une deuxiÃ¨me formation pendant le mÃªme flux.
+   * Dès qu'une formation existe réellement en base, on conserve son ID
+   * afin de ne jamais créer une deuxième formation pendant le même flux.
    */
   const [workingFormationId, setWorkingFormationId] = useState<string | null>(
     mode === "edit" ? formationId ?? null : null,
   );
 
   /*
-   * En modification, on rÃ©cupÃ¨re les ressources privÃ©es existantes.
+   * En modification, on récupère les ressources privées existantes.
    *
-   * Cette lecture ne rÃ©cupÃ¨re jamais de chemin privÃ© Supabase dans
-   * l'interface. La route admin retourne uniquement les mÃ©tadonnÃ©es
-   * nÃ©cessaires Ã  la gestion.
+   * Cette lecture ne récupère jamais de chemin privé Supabase dans
+   * l'interface. La route admin retourne uniquement les métadonnées
+   * nécessaires à la gestion.
    */
   useEffect(() => {
     if (mode !== "edit" || !formationId) {
       return;
     }
 
-    const currentFormationId = formationId;
     const controller = new AbortController();
 
     async function loadPrivateFiles() {
@@ -201,7 +200,7 @@ export default function FormationForm({
 
       try {
         const response = await fetch(
-          `/api/admin/formations/${encodeURIComponent(currentFormationId)}/pdf`,
+          `/api/admin/formations/${encodeURIComponent(formationId)}/pdf`,
           {
             method: "GET",
             credentials: "same-origin",
@@ -216,7 +215,7 @@ export default function FormationForm({
           throw new Error(
             getApiErrorMessage(
               data,
-              "Impossible de charger les ressources privÃ©es de cette formation.",
+              "Impossible de charger les ressources privées de cette formation.",
             ),
           );
         }
@@ -249,7 +248,7 @@ export default function FormationForm({
         setPrivateFilesError(
           loadError instanceof Error
             ? loadError.message
-            : "Impossible de charger les ressources privÃ©es de cette formation.",
+            : "Impossible de charger les ressources privées de cette formation.",
         );
       } finally {
         if (!controller.signal.aborted) {
@@ -318,14 +317,14 @@ export default function FormationForm({
 
     if (remainingSlots <= 0) {
       setPrivateFilesError(
-        `Vous pouvez sÃ©lectionner au maximum ${MAX_FILES_PER_UPLOAD} fichiers par envoi.`,
+        `Vous pouvez sélectionner au maximum ${MAX_FILES_PER_UPLOAD} fichiers par envoi.`,
       );
       return;
     }
 
     if (incomingFiles.length > remainingSlots) {
       setPrivateFilesError(
-        `Vous pouvez sÃ©lectionner au maximum ${MAX_FILES_PER_UPLOAD} fichiers par envoi. Retirez certains fichiers avant dâ€™en ajouter dâ€™autres.`,
+        `Vous pouvez sélectionner au maximum ${MAX_FILES_PER_UPLOAD} fichiers par envoi. Retirez certains fichiers avant d’en ajouter d’autres.`,
       );
       return;
     }
@@ -337,7 +336,7 @@ export default function FormationForm({
       MAX_FILES_PER_COURSE
     ) {
       setPrivateFilesError(
-        `Une formation ne peut pas contenir plus de ${MAX_FILES_PER_COURSE} ressources privÃ©es.`,
+        `Une formation ne peut pas contenir plus de ${MAX_FILES_PER_COURSE} ressources privées.`,
       );
       return;
     }
@@ -364,7 +363,7 @@ export default function FormationForm({
 
       if (alreadySelected) {
         setPrivateFilesError(
-          `Le fichier Â« ${file.name} Â» est dÃ©jÃ  sÃ©lectionnÃ©.`,
+          `Le fichier « ${file.name} » est déjà sélectionné.`,
         );
         return;
       }
@@ -388,7 +387,7 @@ export default function FormationForm({
 
     if (totalSize > MAX_UPLOAD_TOTAL_SIZE) {
       setPrivateFilesError(
-        `La taille totale des fichiers sÃ©lectionnÃ©s ne doit pas dÃ©passer ${formatFileSize(
+        `La taille totale des fichiers sélectionnés ne doit pas dépasser ${formatFileSize(
           MAX_UPLOAD_TOTAL_SIZE,
         )}.`,
       );
@@ -399,8 +398,8 @@ export default function FormationForm({
 
     setPrivateFilesNotice(
       validatedFiles.length === 1
-        ? "1 ressource privÃ©e ajoutÃ©e Ã  la sÃ©lection."
-        : `${validatedFiles.length} ressources privÃ©es ajoutÃ©es Ã  la sÃ©lection.`,
+        ? "1 ressource privée ajoutée à la sélection."
+        : `${validatedFiles.length} ressources privées ajoutées à la sélection.`,
     );
 
     if (error) {
@@ -437,7 +436,7 @@ export default function FormationForm({
 
     if (!targetFormationId) {
       setPrivateFilesError(
-        "Impossible dâ€™identifier la formation.",
+        "Impossible d’identifier la formation.",
       );
       return;
     }
@@ -455,7 +454,7 @@ export default function FormationForm({
     }
 
     const confirmed = window.confirm(
-      `Supprimer dÃ©finitivement la ressource Â« ${existingFile.name} Â» ?`,
+      `Supprimer définitivement la ressource « ${existingFile.name} » ?`,
     );
 
     if (!confirmed) {
@@ -483,7 +482,7 @@ export default function FormationForm({
         throw new Error(
           getApiErrorMessage(
             data,
-            "Impossible de supprimer cette ressource privÃ©e.",
+            "Impossible de supprimer cette ressource privée.",
           ),
         );
       }
@@ -508,7 +507,7 @@ export default function FormationForm({
       }));
 
       setPrivateFilesNotice(
-        "La ressource privÃ©e a Ã©tÃ© supprimÃ©e.",
+        "La ressource privée a été supprimée.",
       );
     } catch (deleteError) {
       console.error(
@@ -519,7 +518,7 @@ export default function FormationForm({
       setPrivateFilesError(
         deleteError instanceof Error
           ? deleteError.message
-          : "Impossible de supprimer cette ressource privÃ©e.",
+          : "Impossible de supprimer cette ressource privée.",
       );
     } finally {
       setDeletingPrivateFileId(null);
@@ -544,7 +543,7 @@ export default function FormationForm({
       values.privateAccessUrl.trim();
 
     if (title.length < 3) {
-      return "Le nom de la formation doit contenir au moins 3 caractÃ¨res.";
+      return "Le nom de la formation doit contenir au moins 3 caractères.";
     }
 
     if (title.length > 150) {
@@ -552,19 +551,19 @@ export default function FormationForm({
     }
 
     if (shortDescription.length < 10) {
-      return "Ajoutez une courte description dâ€™au moins 10 caractÃ¨res.";
+      return "Ajoutez une courte description d’au moins 10 caractères.";
     }
 
     if (shortDescription.length > 300) {
-      return "La courte description ne doit pas dÃ©passer 300 caractÃ¨res.";
+      return "La courte description ne doit pas dépasser 300 caractères.";
     }
 
     if (description.length < 30) {
-      return "La description complÃ¨te doit contenir au moins 30 caractÃ¨res.";
+      return "La description complète doit contenir au moins 30 caractères.";
     }
 
     if (description.length > 50_000) {
-      return "La description complÃ¨te ne doit pas dÃ©passer 50 000 caractÃ¨res.";
+      return "La description complète ne doit pas dépasser 50 000 caractères.";
     }
 
     if (
@@ -572,7 +571,7 @@ export default function FormationForm({
       !Number.isInteger(price) ||
       price < 0
     ) {
-      return "Le prix rÃ©el est invalide.";
+      return "Le prix réel est invalide.";
     }
 
     if (
@@ -590,7 +589,7 @@ export default function FormationForm({
       promotionalPrice !== null &&
       promotionalPrice >= price
     ) {
-      return "Le prix promotionnel doit Ãªtre infÃ©rieur au prix rÃ©el.";
+      return "Le prix promotionnel doit être inférieur au prix réel.";
     }
 
     if (privateAccessUrl) {
@@ -609,10 +608,10 @@ export default function FormationForm({
           url.protocol !== "https:" &&
           !isLocalDevelopment
         ) {
-          return "Le lien privÃ© de la formation doit utiliser HTTPS.";
+          return "Le lien privé de la formation doit utiliser HTTPS.";
         }
       } catch {
-        return "Le lien privÃ© de la formation est invalide.";
+        return "Le lien privé de la formation est invalide.";
       }
     }
 
@@ -620,7 +619,7 @@ export default function FormationForm({
       selectedPrivateFiles.length >
       MAX_FILES_PER_UPLOAD
     ) {
-      return `Vous pouvez envoyer au maximum ${MAX_FILES_PER_UPLOAD} fichiers Ã  la fois.`;
+      return `Vous pouvez envoyer au maximum ${MAX_FILES_PER_UPLOAD} fichiers à la fois.`;
     }
 
     if (
@@ -628,7 +627,7 @@ export default function FormationForm({
         selectedPrivateFiles.length >
       MAX_FILES_PER_COURSE
     ) {
-      return `Une formation ne peut pas contenir plus de ${MAX_FILES_PER_COURSE} ressources privÃ©es.`;
+      return `Une formation ne peut pas contenir plus de ${MAX_FILES_PER_COURSE} ressources privées.`;
     }
 
     let selectedTotalSize = 0;
@@ -648,7 +647,7 @@ export default function FormationForm({
       selectedTotalSize >
       MAX_UPLOAD_TOTAL_SIZE
     ) {
-      return `La taille totale des fichiers sÃ©lectionnÃ©s ne doit pas dÃ©passer ${formatFileSize(
+      return `La taille totale des fichiers sélectionnés ne doit pas dépasser ${formatFileSize(
         MAX_UPLOAD_TOTAL_SIZE,
       )}.`;
     }
@@ -657,14 +656,14 @@ export default function FormationForm({
   }
 
   /*
-   * Une image de description doit appartenir Ã  une vraie formation.
+   * Une image de description doit appartenir à une vraie formation.
    *
-   * En modification, l'ID existe dÃ©jÃ .
+   * En modification, l'ID existe déjà.
    *
-   * En crÃ©ation, si l'administrateur ajoute une image avant de cliquer
-   * sur "CrÃ©er la formation", on crÃ©e une premiÃ¨re version brouillon.
+   * En création, si l'administrateur ajoute une image avant de cliquer
+   * sur "Créer la formation", on crée une première version brouillon.
    * Cet ID devient ensuite workingFormationId et le submit final fait
-   * une modification de ce brouillon au lieu de crÃ©er un doublon.
+   * une modification de ce brouillon au lieu de créer un doublon.
    */
   async function ensureFormationForDescriptionImage(): Promise<string> {
     const existingId =
@@ -682,19 +681,19 @@ export default function FormationForm({
 
     if (title.length < 3) {
       throw new Error(
-        "Renseignez dâ€™abord le nom de la formation avant dâ€™ajouter une image dans la description.",
+        "Renseignez d’abord le nom de la formation avant d’ajouter une image dans la description.",
       );
     }
 
     if (shortDescription.length < 10) {
       throw new Error(
-        "Renseignez dâ€™abord une courte description dâ€™au moins 10 caractÃ¨res avant dâ€™ajouter une image.",
+        "Renseignez d’abord une courte description d’au moins 10 caractères avant d’ajouter une image.",
       );
     }
 
     if (description.length < 30) {
       throw new Error(
-        "Ã‰crivez au moins 30 caractÃ¨res dans la description avant dâ€™ajouter une image.",
+        "Écrivez au moins 30 caractères dans la description avant d’ajouter une image.",
       );
     }
 
@@ -742,7 +741,7 @@ export default function FormationForm({
       throw new Error(
         getApiErrorMessage(
           data,
-          "Impossible de prÃ©parer la formation pour lâ€™ajout de lâ€™image.",
+          "Impossible de préparer la formation pour l’ajout de l’image.",
         ),
       );
     }
@@ -812,7 +811,7 @@ export default function FormationForm({
       throw new Error(
         getApiErrorMessage(
           data,
-          "Impossible dâ€™enregistrer lâ€™image de la description.",
+          "Impossible d’enregistrer l’image de la description.",
         ),
       );
     }
@@ -852,10 +851,10 @@ export default function FormationForm({
     }
 
     /*
-     * En crÃ©ation pure, l'image principale reste obligatoire.
+     * En création pure, l'image principale reste obligatoire.
      *
-     * Si une formation brouillon a dÃ©jÃ  Ã©tÃ© crÃ©Ã©e automatiquement
-     * pour une image de description, l'image principale reste Ã©galement
+     * Si une formation brouillon a déjà été créée automatiquement
+     * pour une image de description, l'image principale reste également
      * obligatoire avant l'enregistrement final.
      */
     if (
@@ -863,7 +862,7 @@ export default function FormationForm({
       !values.images.primary
     ) {
       setError(
-        "Ajoutez lâ€™image principale de la formation avant de continuer.",
+        "Ajoutez l’image principale de la formation avant de continuer.",
       );
       return;
     }
@@ -873,7 +872,7 @@ export default function FormationForm({
       !(workingFormationId ?? formationId)
     ) {
       setError(
-        "Impossible dâ€™identifier la formation Ã  modifier.",
+        "Impossible d’identifier la formation à modifier.",
       );
       return;
     }
@@ -882,7 +881,7 @@ export default function FormationForm({
 
     try {
       // ================================================================
-      // 1. CRÃ‰ATION / MODIFICATION DE LA FORMATION
+      // 1. CRÉATION / MODIFICATION DE LA FORMATION
       // ================================================================
 
       const existingFormationId =
@@ -920,8 +919,8 @@ export default function FormationForm({
             /*
              * Version texte brut.
              *
-             * Elle reste utilisÃ©e par l'architecture existante :
-             * recherche, compatibilitÃ©, fallback, mÃ©tadonnÃ©es, etc.
+             * Elle reste utilisée par l'architecture existante :
+             * recherche, compatibilité, fallback, métadonnées, etc.
              */
             description:
               values.description.trim(),
@@ -929,7 +928,7 @@ export default function FormationForm({
             /*
              * Document TipTap complet.
              *
-             * L'ordre texte/images est conservÃ© ici.
+             * L'ordre texte/images est conservé ici.
              */
             descriptionContent:
               values.descriptionContent,
@@ -967,7 +966,7 @@ export default function FormationForm({
         throw new Error(
           getApiErrorMessage(
             data,
-            "Impossible dâ€™enregistrer la formation.",
+            "Impossible d’enregistrer la formation.",
           ),
         );
       }
@@ -978,7 +977,7 @@ export default function FormationForm({
 
       if (!savedFormationId) {
         throw new Error(
-          "La formation a Ã©tÃ© enregistrÃ©e, mais son identifiant nâ€™a pas Ã©tÃ© retournÃ© par le serveur.",
+          "La formation a été enregistrée, mais son identifiant n’a pas été retourné par le serveur.",
         );
       }
 
@@ -987,7 +986,7 @@ export default function FormationForm({
       );
 
       // ================================================================
-      // 2. UPLOAD DES IMAGES DE PRÃ‰SENTATION
+      // 2. UPLOAD DES IMAGES DE PRÉSENTATION
       // ================================================================
 
       if (values.images.primary) {
@@ -1007,7 +1006,7 @@ export default function FormationForm({
       }
 
       // ================================================================
-      // 3. UPLOAD DES RESSOURCES PRIVÃ‰ES
+      // 3. UPLOAD DES RESSOURCES PRIVÉES
       // PDF + WORD + ZIP
       // ================================================================
 
@@ -1052,8 +1051,8 @@ export default function FormationForm({
             getApiErrorMessage(
               filesData,
               mode === "create"
-                ? "La formation a Ã©tÃ© crÃ©Ã©e, mais certaines ressources privÃ©es nâ€™ont pas pu Ãªtre enregistrÃ©es."
-                : "Les informations ont Ã©tÃ© enregistrÃ©es, mais certaines ressources privÃ©es nâ€™ont pas pu Ãªtre ajoutÃ©es.",
+                ? "La formation a été créée, mais certaines ressources privées n’ont pas pu être enregistrées."
+                : "Les informations ont été enregistrées, mais certaines ressources privées n’ont pas pu être ajoutées.",
             ),
           );
         }
@@ -1115,7 +1114,7 @@ export default function FormationForm({
       setError(
         submitError instanceof Error
           ? submitError.message
-          : "Une erreur est survenue pendant lâ€™enregistrement.",
+          : "Une erreur est survenue pendant l’enregistrement.",
       );
     } finally {
       setIsSubmitting(false);
@@ -1137,12 +1136,12 @@ export default function FormationForm({
     >
       <div className="space-y-6">
         {/* ============================================================= */}
-        {/* INFORMATIONS GÃ‰NÃ‰RALES                                        */}
+        {/* INFORMATIONS GÉNÉRALES                                        */}
         {/* ============================================================= */}
 
         <FormSection
-          title="Informations gÃ©nÃ©rales"
-          description="Informations principales affichÃ©es dans le catalogue."
+          title="Informations générales"
+          description="Informations principales affichées dans le catalogue."
         >
           <div>
             <Label htmlFor="formation-title">
@@ -1161,7 +1160,7 @@ export default function FormationForm({
                   event.target.value,
                 )
               }
-              placeholder="Ex. MaÃ®triser ChatGPT de A Ã  Z"
+              placeholder="Ex. Maîtriser ChatGPT de A à Z"
               className={
                 inputClassName
               }
@@ -1194,7 +1193,7 @@ export default function FormationForm({
                   event.target.value,
                 )
               }
-              placeholder="PrÃ©sentez en quelques lignes lâ€™objectif principal de la formation."
+              placeholder="Présentez en quelques lignes l’objectif principal de la formation."
               className={`${inputClassName} min-h-[110px] resize-y py-3`}
             />
 
@@ -1211,15 +1210,15 @@ export default function FormationForm({
           <div>
             <div className="mb-2">
               <p className="text-sm font-semibold text-slate-700">
-                Description complÃ¨te *
+                Description complète *
               </p>
 
               <p className="mt-1 text-xs leading-5 text-slate-400">
                 Structurez votre contenu
                 avec des titres, du texte,
                 des listes et des images
-                placÃ©es exactement Ã 
-                l&apos;endroit souhaitÃ©.
+                placées exactement à
+                l&apos;endroit souhaité.
               </p>
             </div>
 
@@ -1233,7 +1232,7 @@ export default function FormationForm({
               disabled={
                 isSubmitting
               }
-              placeholder="Expliquez ce que lâ€™apprenant va apprendre, Ã  qui sâ€™adresse la formation et les compÃ©tences dÃ©veloppÃ©es. Vous pouvez insÃ©rer des images exactement entre les paragraphes."
+              placeholder="Expliquez ce que l’apprenant va apprendre, à qui s’adresse la formation et les compétences développées. Vous pouvez insérer des images exactement entre les paragraphes."
               onChange={
                 handleDescriptionChange
               }
@@ -1252,11 +1251,11 @@ export default function FormationForm({
         </FormSection>
 
         {/* ============================================================= */}
-        {/* IMAGES DE PRÃ‰SENTATION                                        */}
+        {/* IMAGES DE PRÉSENTATION                                        */}
         {/* ============================================================= */}
 
         <FormSection
-          title="Images de prÃ©sentation"
+          title="Images de présentation"
           description="Ajoutez au maximum deux images : une principale et une secondaire."
         >
           <FormationImages
@@ -1278,12 +1277,12 @@ export default function FormationForm({
         </FormSection>
 
         {/* ============================================================= */}
-        {/* CONTENU PRIVÃ‰                                                  */}
+        {/* CONTENU PRIVÉ                                                  */}
         {/* ============================================================= */}
 
         <FormSection
-          title="Contenu privÃ© de la formation"
-          description="Ajoutez les PDF, documents Word, archives ZIP et/ou le lien privÃ© qui seront dÃ©livrÃ©s uniquement aprÃ¨s validation du paiement."
+          title="Contenu privé de la formation"
+          description="Ajoutez les PDF, documents Word, archives ZIP et/ou le lien privé qui seront délivrés uniquement après validation du paiement."
         >
           <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
             <div className="flex items-start gap-3">
@@ -1298,13 +1297,13 @@ export default function FormationForm({
 
                 <p className="mt-1 text-xs leading-5 text-amber-800/80">
                   Les fichiers et le lien
-                  privÃ© ne doivent jamais
-                  Ãªtre affichÃ©s dans le
+                  privé ne doivent jamais
+                  être affichés dans le
                   catalogue public. Ils
-                  seront dÃ©livrÃ©s au client
-                  uniquement aprÃ¨s
-                  confirmation rÃ©elle du
-                  paiement cÃ´tÃ© serveur.
+                  seront délivrés au client
+                  uniquement après
+                  confirmation réelle du
+                  paiement côté serveur.
                 </p>
               </div>
             </div>
@@ -1312,7 +1311,7 @@ export default function FormationForm({
 
           <div>
             <Label htmlFor="formation-private-files">
-              Fichiers privÃ©s de la formation
+              Fichiers privés de la formation
             </Label>
 
             <input
@@ -1332,7 +1331,7 @@ export default function FormationForm({
             />
 
             <p className="mt-2 text-xs leading-5 text-slate-400">
-              Formats acceptÃ©s : PDF,
+              Formats acceptés : PDF,
               Word (.doc et .docx) et ZIP.
               Maximum{" "}
               {MAX_FILES_PER_UPLOAD} fichiers
@@ -1366,7 +1365,7 @@ export default function FormationForm({
                 <div className="flex flex-col gap-3 border-b border-emerald-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-bold text-emerald-950">
-                      Fichiers Ã  enregistrer
+                      Fichiers à enregistrer
                     </p>
 
                     <p className="mt-0.5 text-xs text-emerald-700">
@@ -1374,7 +1373,7 @@ export default function FormationForm({
                       {selectedPrivateFiles.length > 1
                         ? "fichiers"
                         : "fichier"}{" "}
-                      â€”{" "}
+                      —{" "}
                       {formatFileSize(
                         selectedTotalSize,
                       )}
@@ -1421,7 +1420,7 @@ export default function FormationForm({
 
                 <p className="text-xs font-semibold text-slate-600">
                   Chargement des ressources
-                  privÃ©es...
+                  privées...
                 </p>
               </div>
             ) : null}
@@ -1432,14 +1431,14 @@ export default function FormationForm({
                 <div className="border-b border-blue-100 px-4 py-3">
                   <p className="text-sm font-bold text-blue-950">
                     Ressources actuellement
-                    enregistrÃ©es
+                    enregistrées
                   </p>
 
                   <p className="mt-0.5 text-xs text-blue-700">
                     {existingPrivateFiles.length}{" "}
                     {existingPrivateFiles.length > 1
-                      ? "ressources privÃ©es"
-                      : "ressource privÃ©e"}
+                      ? "ressources privées"
+                      : "ressource privée"}
                   </p>
                 </div>
 
@@ -1483,7 +1482,7 @@ export default function FormationForm({
 
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-blue-800">
-                      PDF actuellement enregistrÃ©
+                      PDF actuellement enregistré
                     </p>
 
                     <p className="mt-1 truncate text-sm font-bold text-blue-950">
@@ -1505,7 +1504,7 @@ export default function FormationForm({
 
           <div>
             <Label htmlFor="formation-private-link">
-              Lien privÃ© de la formation
+              Lien privé de la formation
             </Label>
 
             <input
@@ -1531,10 +1530,10 @@ export default function FormationForm({
             />
 
             <p className="mt-2 text-xs leading-5 text-slate-400">
-              Ce lien est rÃ©servÃ© aux
+              Ce lien est réservé aux
               clients dont le paiement
-              a Ã©tÃ© confirmÃ©. Il ne
-              doit jamais apparaÃ®tre
+              a été confirmé. Il ne
+              doit jamais apparaître
               sur les pages publiques
               de la formation.
             </p>
@@ -1542,19 +1541,19 @@ export default function FormationForm({
 
           <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
             <p className="text-sm font-bold text-blue-950">
-              Livraison aprÃ¨s paiement
+              Livraison après paiement
             </p>
 
             <p className="mt-1 text-xs leading-5 text-blue-700/80">
-              AprÃ¨s validation rÃ©elle
+              Après validation réelle
               du paiement, AfriSkill
               AI pourra envoyer
               automatiquement au
               client un e-mail
               contenant ses ressources
-              privÃ©es PDF, Word et ZIP,
-              ainsi que le lien privÃ©
-              associÃ© Ã  cette formation.
+              privées PDF, Word et ZIP,
+              ainsi que le lien privé
+              associé à cette formation.
             </p>
           </div>
         </FormSection>
@@ -1565,12 +1564,12 @@ export default function FormationForm({
 
         <FormSection
           title="Tarification"
-          description="DÃ©finissez le prix normal et, si nÃ©cessaire, un prix promotionnel."
+          description="Définissez le prix normal et, si nécessaire, un prix promotionnel."
         >
           <div className="grid gap-5 md:grid-cols-2">
             <div>
               <Label htmlFor="formation-price">
-                Prix rÃ©el *
+                Prix réel *
               </Label>
 
               <input
@@ -1655,7 +1654,7 @@ export default function FormationForm({
               </option>
 
               <option value="USD">
-                Dollar amÃ©ricain (USD)
+                Dollar américain (USD)
               </option>
             </select>
           </div>
@@ -1673,7 +1672,7 @@ export default function FormationForm({
           </h2>
 
           <p className="mt-1 text-sm leading-6 text-slate-500">
-            ContrÃ´lez la visibilitÃ© de
+            Contrôlez la visibilité de
             cette formation.
           </p>
 
@@ -1702,7 +1701,7 @@ export default function FormationForm({
                 "published"
               }
               title="Publier"
-              description="La formation pourra Ãªtre visible dans le catalogue."
+              description="La formation pourra être visible dans le catalogue."
               onClick={() =>
                 updateField(
                   "status",
@@ -1738,7 +1737,7 @@ export default function FormationForm({
               ) : mode === "create" ? (
                 workingFormationId
                   ? "Finaliser la formation"
-                  : "CrÃ©er la formation"
+                  : "Créer la formation"
               ) : (
                 "Enregistrer les modifications"
               )}
@@ -1775,9 +1774,9 @@ export default function FormationForm({
               <p className="mt-1 text-xs leading-5 text-blue-700/70">
                 Les PDF, documents Word,
                 archives ZIP et le lien
-                sont des contenus privÃ©s.
-                Ils ne doivent Ãªtre
-                transmis qu&apos;aprÃ¨s
+                sont des contenus privés.
+                Ils ne doivent être
+                transmis qu&apos;après
                 confirmation du paiement
                 par le serveur.
               </p>
@@ -1792,8 +1791,8 @@ export default function FormationForm({
 
           <p className="mt-2 text-xs leading-5 text-slate-500">
             Le texte brut reste
-            enregistrÃ© pour assurer
-            la compatibilitÃ© avec
+            enregistré pour assurer
+            la compatibilité avec
             l&apos;architecture
             existante. Le document
             enrichi conserve les
@@ -1949,7 +1948,7 @@ function PrivateFileRow({
 
           <p className="mt-0.5 text-xs text-slate-500">
             {getPrivateFileTypeLabel(type)}
-            {" Â· "}
+            {" · "}
             {formatFileSize(size)}
           </p>
         </div>
@@ -2118,14 +2117,14 @@ function validatePrivateFile(
     return {
       ok: false,
       message:
-        "Un fichier sÃ©lectionnÃ© possÃ¨de un nom invalide.",
+        "Un fichier sélectionné possède un nom invalide.",
     };
   }
 
   if (file.size <= 0) {
     return {
       ok: false,
-      message: `Le fichier Â« ${file.name} Â» est vide.`,
+      message: `Le fichier « ${file.name} » est vide.`,
     };
   }
 
@@ -2135,7 +2134,7 @@ function validatePrivateFile(
   if (!type) {
     return {
       ok: false,
-      message: `Le fichier Â« ${file.name} Â» nâ€™est pas acceptÃ©. Formats autorisÃ©s : PDF, DOC, DOCX et ZIP.`,
+      message: `Le fichier « ${file.name} » n’est pas accepté. Formats autorisés : PDF, DOC, DOCX et ZIP.`,
     };
   }
 
@@ -2149,8 +2148,8 @@ function validatePrivateFile(
       ok: false,
       message:
         type === "ZIP"
-          ? `Le fichier ZIP Â« ${file.name} Â» ne doit pas dÃ©passer 100 Mo.`
-          : `Le fichier Â« ${file.name} Â» ne doit pas dÃ©passer 25 Mo.`,
+          ? `Le fichier ZIP « ${file.name} » ne doit pas dépasser 100 Mo.`
+          : `Le fichier « ${file.name} » ne doit pas dépasser 25 Mo.`,
     };
   }
 
@@ -2166,7 +2165,7 @@ function validatePrivateFile(
   ) {
     return {
       ok: false,
-      message: `Le type du fichier Â« ${file.name} Â» ne correspond pas Ã  son format.`,
+      message: `Le type du fichier « ${file.name} » ne correspond pas à son format.`,
     };
   }
 
@@ -2379,13 +2378,13 @@ async function uploadFormationImage(
   ) {
     const label =
       type === "PRIMARY"
-        ? "lâ€™image principale"
-        : "lâ€™image secondaire";
+        ? "l’image principale"
+        : "l’image secondaire";
 
     throw new Error(
       getApiErrorMessage(
         data,
-        `Impossible dâ€™enregistrer ${label} de la formation.`,
+        `Impossible d’enregistrer ${label} de la formation.`,
       ),
     );
   }

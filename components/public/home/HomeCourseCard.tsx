@@ -8,20 +8,22 @@ import type { PublicCourseCardData } from "@/types/public-course";
 
 /**
  * ============================================================================
- * AFRISKILL AI â€” HOME COURSE CARD
+ * AFRISKILL AI — HOME COURSE CARD
  * ============================================================================
  *
- * Carte de formation utilisÃ©e sur la page d'accueil.
+ * Carte de formation utilisée sur la page d'accueil.
  *
  * Objectifs :
  * - mettre l'image de la formation en valeur ;
- * - conserver un titre rÃ©ellement lisible sur mobile ;
+ * - afficher un titre fort, professionnel et immédiatement identifiable ;
+ * - différencier clairement le titre de la description ;
+ * - conserver un titre réellement lisible sur mobile ;
  * - afficher clairement prix normal / promotion ;
  * - permettre d'ouvrir rapidement la formation ;
  * - permettre l'ajout direct au panier ;
- * - conserver un Ã©tat visuel clair lorsque la formation est dÃ©jÃ  ajoutÃ©e ;
- * - rester homogÃ¨ne sur mobile, tablette et desktop ;
- * - rester compacte lorsque deux cartes sont affichÃ©es par ligne sur mobile.
+ * - conserver un état visuel clair lorsque la formation est déjà ajoutée ;
+ * - rester homogène sur mobile, tablette et desktop ;
+ * - rester compacte lorsque deux cartes sont affichées par ligne sur mobile.
  * ============================================================================
  */
 
@@ -65,7 +67,7 @@ function formatPrice(
 
 /**
  * ============================================================================
- * ICÃ”NES
+ * ICÔNES
  * ============================================================================
  */
 
@@ -150,8 +152,6 @@ function CheckIcon() {
  * ============================================================================
  * PLACEHOLDER
  * ============================================================================
- *
- * AffichÃ© uniquement lorsqu'aucune image publique valide n'est disponible.
  */
 
 function CoursePlaceholder() {
@@ -163,9 +163,7 @@ function CoursePlaceholder() {
         "w-full",
         "items-center",
         "justify-center",
-
         "bg-[radial-gradient(circle_at_30%_20%,#0B3B8F_0%,#061A40_48%,#031027_100%)]",
-
         "px-3",
         "sm:px-4",
       ].join(" ")}
@@ -174,26 +172,19 @@ function CoursePlaceholder() {
         <div
           className={[
             "mx-auto",
-
             "flex",
             "h-10",
             "w-10",
             "items-center",
             "justify-center",
-
             "rounded-xl",
-
             "border",
             "border-[var(--afriskill-gold)]/30",
-
             "bg-white/[0.06]",
-
             "text-lg",
             "font-black",
             "text-[var(--afriskill-gold)]",
-
             "shadow-[0_8px_24px_rgba(0,0,0,0.12)]",
-
             "sm:h-14",
             "sm:w-14",
             "sm:rounded-2xl",
@@ -206,12 +197,10 @@ function CoursePlaceholder() {
         <p
           className={[
             "mt-2",
-
             "text-[10px]",
             "font-bold",
             "tracking-[-0.01em]",
             "text-white",
-
             "sm:mt-2.5",
             "sm:text-sm",
           ].join(" ")}
@@ -244,17 +233,9 @@ export default function HomeCourseCard({
   const inCart =
     isHydrated && hasCourse(course.id);
 
-  /**
-   * On conserve ici une validation locale.
-   *
-   * MÃªme si les donnÃ©es sont dÃ©jÃ  normalisÃ©es dans la couche publique,
-   * la carte reste robuste lorsqu'elle reÃ§oit une donnÃ©e inattendue.
-   */
   const hasPromotion =
     course.promotionalPrice !== null &&
-    Number.isFinite(
-      course.promotionalPrice,
-    ) &&
+    Number.isFinite(course.promotionalPrice) &&
     course.promotionalPrice >= 0 &&
     Number.isFinite(course.price) &&
     course.promotionalPrice < course.price;
@@ -268,9 +249,6 @@ export default function HomeCourseCard({
   const courseHref =
     `/formations/${course.id}`;
 
-  /**
-   * Ajout au panier.
-   */
   function handleAddToCart() {
     if (!isHydrated || inCart) {
       return;
@@ -283,32 +261,22 @@ export default function HomeCourseCard({
     <article
       className={[
         "group",
-
         "relative",
-
         "flex",
         "h-full",
         "min-w-0",
         "flex-col",
-
         "overflow-hidden",
-
         "rounded-xl",
-
         "border",
         "border-[var(--border)]",
-
         "bg-white",
-
         "shadow-[var(--shadow-card)]",
-
         "transition-[border-color,box-shadow,transform]",
         "duration-300",
-
         "hover:-translate-y-1",
         "hover:border-[var(--afriskill-cyan)]/45",
         "hover:shadow-[var(--shadow-card-hover)]",
-
         "sm:rounded-[20px]",
       ].join(" ")}
     >
@@ -324,18 +292,13 @@ export default function HomeCourseCard({
           "block",
           "w-full",
           "shrink-0",
-
           "aspect-[16/10]",
-
           "overflow-hidden",
-
           "bg-[var(--afriskill-navy)]",
-
           "focus-visible:outline-none",
           "focus-visible:ring-2",
           "focus-visible:ring-inset",
           "focus-visible:ring-[var(--afriskill-cyan)]",
-
           "sm:aspect-[16/9]",
         ].join(" ")}
       >
@@ -357,10 +320,8 @@ export default function HomeCourseCard({
             className={[
               "object-cover",
               "object-center",
-
               "transition-transform",
               "duration-500",
-
               "group-hover:scale-[1.035]",
             ].join(" ")}
           />
@@ -368,28 +329,18 @@ export default function HomeCourseCard({
           <CoursePlaceholder />
         )}
 
-        {/* ==============================================================
-            DÃ‰GRADÃ‰ SUR IMAGE
-            ============================================================== */}
-
         <div
           aria-hidden="true"
           className={[
             "pointer-events-none",
             "absolute",
             "inset-0",
-
             "bg-gradient-to-t",
-
             "from-[var(--afriskill-navy-dark)]/40",
             "via-transparent",
             "to-transparent",
           ].join(" ")}
         />
-
-        {/* ==============================================================
-            BADGE PROMOTION
-            ============================================================== */}
 
         {hasPromotion ? (
           <span
@@ -397,29 +348,21 @@ export default function HomeCourseCard({
               "absolute",
               "left-2",
               "top-2",
-
               "inline-flex",
               "min-h-6",
               "items-center",
               "justify-center",
-
               "rounded-full",
-
               "bg-[var(--afriskill-gold)]",
-
               "px-2",
               "py-1",
-
               "text-[8px]",
               "font-black",
               "uppercase",
               "leading-none",
               "tracking-[0.06em]",
-
               "text-[var(--afriskill-navy-dark)]",
-
               "shadow-[0_5px_16px_rgba(0,0,0,0.18)]",
-
               "sm:left-3.5",
               "sm:top-3.5",
               "sm:min-h-7",
@@ -432,41 +375,28 @@ export default function HomeCourseCard({
           </span>
         ) : null}
 
-        {/* ==============================================================
-            INDICATION VISUELLE
-            ============================================================== */}
-
         <span
           aria-hidden="true"
           className={[
             "absolute",
             "bottom-2",
             "right-2",
-
             "flex",
             "h-7",
             "w-7",
             "items-center",
             "justify-center",
-
             "rounded-full",
-
             "border",
             "border-white/20",
-
             "bg-[var(--afriskill-navy-dark)]/80",
-
             "text-white",
-
             "shadow-md",
             "backdrop-blur-md",
-
             "transition-[background-color,transform]",
             "duration-300",
-
             "group-hover:translate-x-0.5",
             "group-hover:bg-[var(--afriskill-blue)]",
-
             "sm:bottom-3",
             "sm:right-3",
             "sm:h-9",
@@ -487,23 +417,22 @@ export default function HomeCourseCard({
           "min-w-0",
           "flex-1",
           "flex-col",
-
           "p-3",
-
           "sm:p-5",
         ].join(" ")}
       >
         {/* ==============================================================
-            INFORMATIONS
+            TITRE ET DESCRIPTION
             ============================================================== */}
 
         <div className="flex-1">
           <Link
             href={courseHref}
+            aria-label={`Voir la formation ${course.title}`}
             className={[
+              "group/title",
               "block",
               "rounded-md",
-
               "focus-visible:outline-none",
               "focus-visible:ring-2",
               "focus-visible:ring-[var(--afriskill-cyan)]",
@@ -514,35 +443,28 @@ export default function HomeCourseCard({
               className={[
                 "line-clamp-2",
 
-                "text-[13px]",
-
-                /**
-                 * Titre principal de la formation.
-                 *
-                 * On conserve exactement la taille, la hauteur,
-                 * le responsive et le comportement de la version
-                 * de base. Seule la graisse est renforcÃ©e afin
-                 * d'obtenir un rendu plus commercial et plus net.
+                /*
+                 * Le ! devant les propriétés importantes est volontaire.
+                 * Il garantit que les styles généraux du site ne peuvent pas
+                 * rendre le titre identique à la description.
                  */
-                "font-black",
-                "[font-weight:900]",
 
-                "leading-[1.35]",
-                "tracking-[-0.02em]",
-
-                "text-[var(--text-primary)]",
+                "!text-[15px]",
+                "!font-black",
+                "![font-weight:900]",
+                "!leading-[1.25]",
+                "!tracking-[-0.03em]",
+                "!text-[#061A40]",
 
                 "transition-colors",
                 "duration-200",
 
-                "group-hover:text-[var(--afriskill-blue)]",
+                "group-hover/title:!text-[#0B5ED7]",
 
-                "min-[380px]:text-[14px]",
-
-                "sm:text-[17px]",
-                "sm:tracking-[-0.025em]",
-
-                "lg:text-[18px]",
+                "min-[380px]:!text-[16px]",
+                "sm:!text-[19px]",
+                "sm:!leading-[1.25]",
+                "lg:!text-[20px]",
               ].join(" ")}
             >
               {course.title}
@@ -552,20 +474,20 @@ export default function HomeCourseCard({
           {course.shortDescription ? (
             <p
               className={[
-                "mt-1.5",
-
+                "mt-2.5",
                 "line-clamp-2",
 
-                "text-[10px]",
-                "leading-4",
+                "!text-[10px]",
+                "!font-normal",
+                "![font-weight:400]",
+                "!leading-[1.55]",
+                "!tracking-normal",
+                "!text-slate-600",
 
-                "text-[var(--text-muted)]",
-
-                "min-[380px]:text-[11px]",
-
-                "sm:mt-2",
-                "sm:text-[13px]",
-                "sm:leading-[1.65]",
+                "min-[380px]:!text-[11px]",
+                "sm:mt-3",
+                "sm:!text-[13px]",
+                "sm:!leading-[1.6]",
               ].join(" ")}
             >
               {course.shortDescription}
@@ -574,7 +496,7 @@ export default function HomeCourseCard({
         </div>
 
         {/* ==============================================================
-            SÃ‰PARATION
+            SÉPARATION
             ============================================================== */}
 
         <div
@@ -584,7 +506,6 @@ export default function HomeCourseCard({
             "h-px",
             "w-full",
             "bg-[var(--border-soft)]",
-
             "sm:my-4",
           ].join(" ")}
         />
@@ -600,7 +521,6 @@ export default function HomeCourseCard({
             "min-w-0",
             "flex-col",
             "justify-end",
-
             "sm:min-h-[48px]",
           ].join(" ")}
         >
@@ -608,15 +528,11 @@ export default function HomeCourseCard({
             <span
               className={[
                 "truncate",
-
                 "text-[9px]",
                 "font-medium",
                 "leading-none",
-
                 "text-[var(--text-subtle)]",
-
                 "line-through",
-
                 "sm:text-[11px]",
               ].join(" ")}
             >
@@ -632,9 +548,7 @@ export default function HomeCourseCard({
                 "font-bold",
                 "uppercase",
                 "tracking-[0.08em]",
-
                 "text-[var(--text-subtle)]",
-
                 "sm:text-[10px]",
                 "sm:tracking-[0.1em]",
               ].join(" ")}
@@ -662,7 +576,6 @@ export default function HomeCourseCard({
                 : "text-[var(--text-primary)]",
 
               "min-[380px]:text-[16px]",
-
               "sm:text-[20px]",
             ].join(" ")}
           >
@@ -680,65 +593,48 @@ export default function HomeCourseCard({
         <div
           className={[
             "mt-3",
-
             "grid",
             "grid-cols-[minmax(0,1fr)_40px]",
             "gap-2",
-
             "sm:mt-4",
             "sm:grid-cols-[minmax(0,1fr)_48px]",
             "sm:gap-2.5",
           ].join(" ")}
         >
-          {/* VOIR LA FORMATION */}
-
           <Link
             href={courseHref}
             aria-label={`Voir la formation ${course.title}`}
             className={[
               "group/action",
-
               "inline-flex",
               "min-h-10",
               "min-w-0",
               "items-center",
               "justify-center",
               "gap-1.5",
-
               "rounded-lg",
-
               "border",
               "border-[var(--afriskill-navy)]",
-
               "bg-[var(--afriskill-navy)]",
-
               "px-2",
               "py-2",
-
               "text-center",
               "text-[10px]",
               "font-bold",
               "leading-4",
-
               "!text-white",
-
               "shadow-[0_6px_18px_rgba(6,26,64,0.10)]",
-
               "transition-[background-color,border-color,box-shadow,transform,color]",
               "duration-200",
-
               "hover:border-[var(--afriskill-blue)]",
               "hover:bg-[var(--afriskill-blue)]",
               "hover:!text-white",
               "hover:shadow-[0_8px_22px_rgba(6,26,64,0.14)]",
-
               "focus-visible:outline-none",
               "focus-visible:ring-2",
               "focus-visible:ring-[var(--afriskill-cyan)]",
               "focus-visible:ring-offset-2",
-
               "active:translate-y-px",
-
               "sm:min-h-12",
               "sm:gap-2",
               "sm:rounded-xl",
@@ -757,12 +653,9 @@ export default function HomeCourseCard({
                 "hidden",
                 "shrink-0",
                 "!text-white",
-
                 "transition-transform",
                 "duration-200",
-
                 "group-hover/action:translate-x-0.5",
-
                 "min-[380px]:inline-flex",
               ].join(" ")}
             >
@@ -770,20 +663,18 @@ export default function HomeCourseCard({
             </span>
           </Link>
 
-          {/* AJOUT AU PANIER */}
-
           <button
             type="button"
             onClick={handleAddToCart}
             disabled={!isHydrated || inCart}
             aria-label={
               inCart
-                ? `${course.title} est dÃ©jÃ  dans le panier`
+                ? `${course.title} est déjà dans le panier`
                 : `Ajouter ${course.title} au panier`
             }
             title={
               inCart
-                ? "DÃ©jÃ  dans le panier"
+                ? "Déjà dans le panier"
                 : "Ajouter au panier"
             }
             className={[
@@ -793,21 +684,15 @@ export default function HomeCourseCard({
               "shrink-0",
               "items-center",
               "justify-center",
-
               "rounded-lg",
-
               "border",
-
               "transition-[background-color,border-color,color,box-shadow,transform]",
               "duration-200",
-
               "focus-visible:outline-none",
               "focus-visible:ring-2",
               "focus-visible:ring-[var(--afriskill-gold)]",
               "focus-visible:ring-offset-2",
-
               "active:scale-[0.97]",
-
               "sm:h-12",
               "sm:w-12",
               "sm:rounded-xl",
@@ -830,9 +715,7 @@ export default function HomeCourseCard({
                       "border-[var(--afriskill-gold)]",
                       "bg-[var(--afriskill-gold)]",
                       "text-[var(--afriskill-navy-dark)]",
-
                       "shadow-[0_6px_18px_rgba(245,180,0,0.18)]",
-
                       "hover:border-[var(--afriskill-gold-light)]",
                       "hover:bg-[var(--afriskill-gold-light)]",
                       "hover:shadow-[0_8px_22px_rgba(245,180,0,0.22)]",
@@ -848,7 +731,7 @@ export default function HomeCourseCard({
         </div>
 
         {/* ==============================================================
-            Ã‰TAT DU PANIER
+            ÉTAT DU PANIER
             ============================================================== */}
 
         <div
@@ -859,17 +742,13 @@ export default function HomeCourseCard({
             <p
               className={[
                 "mt-2",
-
                 "inline-flex",
                 "items-center",
                 "gap-1",
-
                 "text-[9px]",
                 "font-semibold",
                 "leading-4",
-
                 "text-emerald-700",
-
                 "sm:gap-1.5",
                 "sm:text-[11px]",
               ].join(" ")}
@@ -883,9 +762,7 @@ export default function HomeCourseCard({
                   "shrink-0",
                   "items-center",
                   "justify-center",
-
                   "rounded-full",
-
                   "bg-emerald-100",
                 ].join(" ")}
               >
@@ -893,7 +770,7 @@ export default function HomeCourseCard({
               </span>
 
               <span className="truncate">
-                AjoutÃ© au panier
+                Ajouté au panier
               </span>
             </p>
           ) : null}

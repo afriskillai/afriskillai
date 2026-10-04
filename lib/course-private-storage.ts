@@ -10,34 +10,30 @@ import {
  * AFRISKILL AI — COURSE PRIVATE STORAGE
  * ============================================================================
  *
- * Fichier :
- * lib/course-private-storage.ts
- *
  * RESPONSABILITÉ :
  *
- * - accéder au bucket privé contenant les PDF des formations ;
+ * - accéder au bucket privé contenant les ressources des formations ;
+ * - supporter PDF, Word et ZIP ;
+ * - supporter plusieurs fichiers par formation ;
  * - utiliser Supabase exclusivement côté serveur ;
- * - utiliser la Service Role Key uniquement côté serveur ;
- * - recevoir le privatePdfPath enregistré en base de données ;
- * - générer une URL signée temporaire pour le PDF ;
- * - ne jamais transformer le bucket en bucket public ;
- * - ne jamais exposer la Service Role Key ;
- * - ne jamais retourner le chemin privé brut au navigateur ;
- * - fournir un adaptateur utilisable par lib/course-delivery.ts.
+ * - générer uniquement des URL signées temporaires ;
+ * - ne jamais rendre le bucket public ;
+ * - ne jamais exposer la clé Supabase serveur ;
+ * - ne jamais retourner le chemin Storage brut au navigateur ;
+ * - conserver la compatibilité avec l'ancien privatePdfPath ;
+ * - fournir un adaptateur stable à lib/course-delivery.ts.
  *
  * IMPORTANT :
  *
  * Ce fichier ne décide PAS si un client a payé.
  *
- * La vérification :
+ * La validation :
  *
- *   Order = PAID
+ *   Order   = PAID
  *   Payment = PAID
  *
  * reste sous la responsabilité de lib/course-delivery.ts.
  *
- * Ce service doit donc être appelé uniquement après validation serveur
- * du paiement.
  * ============================================================================
  */
 
@@ -47,30 +43,29 @@ import {
  * ============================================================================
  */
 
-/**
- * Durée par défaut d'une URL signée.
- *
- * 1 heure.
- *
- * Une URL signée ne doit pas devenir une URL permanente.
- */
-export const DEFAULT_COURSE_PDF_SIGNED_URL_TTL_SECONDS =
+export const DEFAULT_COURSE_FILE_SIGNED_URL_TTL_SECONDS =
   60 * 60;
 
 /**
- * Limites raisonnables.
+ * Alias historique.
+ *
+ * Ne pas supprimer :
+ * d'autres fichiers peuvent encore importer cette constante.
  */
-const MIN_SIGNED_URL_TTL_SECONDS =
-  60;
+export const DEFAULT_COURSE_PDF_SIGNED_URL_TTL_SECONDS =
+  DEFAULT_COURSE_FILE_SIGNED_URL_TTL_SECONDS;
+
+const MIN_SIGNED_URL_TTL_SECONDS = 60;
 
 const MAX_SIGNED_URL_TTL_SECONDS =
   60 * 60 * 24;
 
-const MAX_STORAGE_PATH_LENGTH =
-  1024;
+const MAX_STORAGE_PATH_LENGTH = 1024;
 
-const MAX_FILENAME_LENGTH =
-  180;
+const MAX_FILENAME_LENGTH = 180;
+
+const DEFAULT_PRIVATE_BUCKET =
+  "course-files";
 
 /**
  * ============================================================================
@@ -78,61 +73,91 @@ const MAX_FILENAME_LENGTH =
  * ============================================================================
  */
 
-export type CoursePrivatePdfInput = {
+export type CoursePrivateFileType =
+  | "PDF"
+  | "WORD"
+  | "ZIP";
+
+export type CoursePrivateFileInput = {
   /**
-   * Chemin privé enregistré dans Course.privatePdfPath.
+   * Chemin privé relatif au bucket Supabase.
    *
    * Exemple :
+   * formations/course-id/resources/file.pdf
    *
-   * courses/abc123/formation.pdf
-   *
-   * Il ne doit PAS s'agir d'une URL publique.
+   * Il ne doit jamais s'agir d'une URL publique.
    */
-  privatePdfPath: string;
+  path: string;
 
   /**
-   * Nom du fichier présenté au client.
-   *
-   * Exemple :
-   *
-   * Formation-AfriSkill-AI.pdf
+   * Nom présenté au client lors du téléchargement.
    */
   filename?: string | null;
 
   /**
-   * Durée de validité de l'URL signée.
+   * Type logique enregistré dans CourseFile.
+   */
+  type?: CoursePrivateFileType | null;
+
+  /**
+   * MIME enregistré en base.
    *
-   * Facultatif.
+   * Informatif ici : la sécurité principale repose sur
+   * le chemin privé + l'URL signée.
+   */
+  mimeType?: string | null;
+
+  /**
+   * Durée de validité de l'URL signée.
    */
   expiresInSeconds?: number;
 };
 
-export type CoursePrivatePdfAccess = {
-  /**
-   * URL HTTPS temporaire signée.
-   */
+export type CoursePrivateFileAccessResult = {
   url: string;
-
-  /**
-   * Nom propre du fichier.
-   */
   filename: string;
-
-  /**
-   * Durée de validité en secondes.
-   */
+  type: CoursePrivateFileType;
+  mimeType: string | null;
   expiresInSeconds: number;
-
-  /**
-   * Date d'expiration informative.
-   */
   expiresAt: Date;
 };
 
 /**
- * Contrat attendu par lib/course-delivery.ts.
+ * ============================================================================
+ * COMPATIBILITÉ PDF HISTORIQUE
+ * ============================================================================
  */
+
+export type CoursePrivatePdfInput = {
+  privatePdfPath: string;
+  filename?: string | null;
+  expiresInSeconds?: number;
+};
+
+export type CoursePrivatePdfAccess = {
+  url: string;
+  filename: string;
+  expiresInSeconds: number;
+  expiresAt: Date;
+};
+
+/**
+ * ============================================================================
+ * ADAPTATEUR PUBLIC INTERNE
+ * ============================================================================
+ *
+ * createSignedPdfUrl() reste volontairement présent.
+ *
+ * lib/course-delivery.ts peut donc continuer à fonctionner pendant
+ * la migration vers CourseFile.
+ */
+
 export interface CoursePrivateFileAccess {
+  /**
+   * Ancienne API.
+   *
+   * NE PAS SUPPRIMER.
+   */
   createSignedPdfUrl(input: {
     privatePdfPath: string;
     filename?: string | null;
@@ -141,6 +166,42 @@ export interface CoursePrivateFileAccess {
     url: string;
     filename: string;
   }>;
+
+  /**
+   * Nouvelle API générique.
+   */
+  createSignedFileUrl(input: {
+    path: string;
+    filename?: string | null;
+    type?: CoursePrivateFileType | null;
+    mimeType?: string | null;
+    expiresInSeconds?: number;
+  }): Promise<{
+    url: string;
+    filename: string;
+    type: CoursePrivateFileType;
+    mimeType: string | null;
+  }>;
+
+  /**
+   * Génération de plusieurs accès privés.
+   */
+  createSignedFileUrls(
+    inputs: Array<{
+      path: string;
+      filename?: string | null;
+      type?: CoursePrivateFileType | null;
+      mimeType?: string | null;
+      expiresInSeconds?: number;
+    }>,
+  ): Promise<
+    Array<{
+      url: string;
+      filename: string;
+      type: CoursePrivateFileType;
+      mimeType: string | null;
+    }>
+  >;
 }
 
 /**
@@ -154,12 +215,12 @@ export type CoursePrivateStorageErrorCode =
   | "STORAGE_CONFIGURATION_INVALID"
   | "STORAGE_PATH_INVALID"
   | "STORAGE_FILENAME_INVALID"
+  | "STORAGE_FILE_TYPE_INVALID"
   | "STORAGE_SIGNED_URL_FAILED"
   | "STORAGE_SIGNED_URL_INVALID";
 
 export class CoursePrivateStorageError extends Error {
-  readonly code:
-    CoursePrivateStorageErrorCode;
+  readonly code: CoursePrivateStorageErrorCode;
 
   constructor({
     code,
@@ -182,8 +243,7 @@ export class CoursePrivateStorageError extends Error {
     this.name =
       "CoursePrivateStorageError";
 
-    this.code =
-      code;
+    this.code = code;
   }
 }
 
@@ -212,9 +272,7 @@ function getRequiredEnvironmentVariable(
   names: string[],
 ): string {
   const value =
-    getEnvironmentVariable(
-      ...names,
-    );
+    getEnvironmentVariable(...names);
 
   if (!value) {
     throw new CoursePrivateStorageError({
@@ -235,12 +293,6 @@ function getRequiredEnvironmentVariable(
  * ============================================================================
  * SUPABASE URL
  * ============================================================================
- *
- * On accepte plusieurs noms afin de rester compatible avec
- * l'architecture existante du projet.
- *
- * La préférence va à SUPABASE_URL côté serveur.
- * ============================================================================
  */
 
 function getSupabaseUrl(): string {
@@ -255,12 +307,21 @@ function getSupabaseUrl(): string {
       new URL(value);
 
     if (
-      url.protocol !== "https:" &&
       process.env.NODE_ENV ===
-        "production"
+        "production" &&
+      url.protocol !== "https:"
     ) {
       throw new Error(
         "HTTPS_REQUIRED",
+      );
+    }
+
+    if (
+      url.protocol !== "https:" &&
+      url.protocol !== "http:"
+    ) {
+      throw new Error(
+        "INVALID_PROTOCOL",
       );
     }
 
@@ -280,20 +341,20 @@ function getSupabaseUrl(): string {
 
 /**
  * ============================================================================
- * SERVICE ROLE KEY
+ * CLÉ SUPABASE SERVEUR
  * ============================================================================
  *
- * IMPORTANT :
+ * L'architecture actuelle utilise SUPABASE_SECRET_KEY.
  *
- * Cette clé contourne les politiques RLS lorsqu'elle est utilisée
- * correctement côté serveur.
+ * SUPABASE_SERVICE_ROLE_KEY reste accepté uniquement comme fallback
+ * afin de ne pas casser une ancienne configuration déjà déployée.
  *
- * Elle ne doit JAMAIS porter le préfixe NEXT_PUBLIC_.
- * ============================================================================
+ * Aucune de ces clés ne doit porter NEXT_PUBLIC_.
  */
 
-function getSupabaseServiceRoleKey(): string {
+function getSupabaseServerSecret(): string {
   return getRequiredEnvironmentVariable([
+    "SUPABASE_SECRET_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
   ]);
 }
@@ -302,13 +363,26 @@ function getSupabaseServiceRoleKey(): string {
  * ============================================================================
  * BUCKET PRIVÉ
  * ============================================================================
+ *
+ * Ordre :
+ *
+ * 1. SUPABASE_COURSE_FILES_BUCKET
+ * 2. COURSE_PRIVATE_BUCKET
+ * 3. course-files
+ *
+ * Cela aligne ce service sur la route admin multi-fichiers.
  */
 
 function getPrivateBucketName(): string {
-  const bucket =
-    getRequiredEnvironmentVariable([
+  const configuredBucket =
+    getEnvironmentVariable(
+      "SUPABASE_COURSE_FILES_BUCKET",
       "COURSE_PRIVATE_BUCKET",
-    ]);
+    );
+
+  const bucket =
+    configuredBucket ??
+    DEFAULT_PRIVATE_BUCKET;
 
   const normalized =
     bucket.trim();
@@ -324,7 +398,7 @@ function getPrivateBucketName(): string {
         "STORAGE_CONFIGURATION_INVALID",
 
       message:
-        "COURSE_PRIVATE_BUCKET est invalide.",
+        "Le bucket privé des fichiers de formation est invalide.",
     });
   }
 
@@ -338,37 +412,51 @@ function getPrivateBucketName(): string {
  */
 
 let supabaseAdminClient:
-  SupabaseClient | null =
-  null;
+  SupabaseClient | null = null;
+
+let supabaseAdminClientSignature:
+  string | null = null;
 
 function getSupabaseAdminClient():
   SupabaseClient {
-  if (supabaseAdminClient) {
+  const supabaseUrl =
+    getSupabaseUrl();
+
+  const serverSecret =
+    getSupabaseServerSecret();
+
+  /**
+   * Permet de recréer proprement le client si l'environnement
+   * change pendant certains scénarios de développement/test.
+   *
+   * On ne stocke pas la clé elle-même dans la signature.
+   */
+  const signature =
+    `${supabaseUrl}:${serverSecret.length}`;
+
+  if (
+    supabaseAdminClient &&
+    supabaseAdminClientSignature ===
+      signature
+  ) {
     return supabaseAdminClient;
   }
 
   supabaseAdminClient =
     createClient(
-      getSupabaseUrl(),
-      getSupabaseServiceRoleKey(),
+      supabaseUrl,
+      serverSecret,
       {
         auth: {
-          /**
-           * Ce client est un client serveur technique.
-           *
-           * Il ne doit jamais maintenir de session utilisateur.
-           */
-          persistSession:
-            false,
-
-          autoRefreshToken:
-            false,
-
-          detectSessionInUrl:
-            false,
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
         },
       },
     );
+
+  supabaseAdminClientSignature =
+    signature;
 
   return supabaseAdminClient;
 }
@@ -379,18 +467,16 @@ function getSupabaseAdminClient():
  * ============================================================================
  */
 
-function normalizePrivatePdfPath(
+function normalizePrivateStoragePath(
   value: string,
 ): string {
-  if (
-    typeof value !== "string"
-  ) {
+  if (typeof value !== "string") {
     throw new CoursePrivateStorageError({
       code:
         "STORAGE_PATH_INVALID",
 
       message:
-        "Le chemin privé du PDF est invalide.",
+        "Le chemin privé du fichier est invalide.",
     });
   }
 
@@ -407,47 +493,32 @@ function normalizePrivatePdfPath(
         "STORAGE_PATH_INVALID",
 
       message:
-        "Le chemin privé du PDF est vide ou trop long.",
+        "Le chemin privé du fichier est vide ou trop long.",
     });
   }
 
   /**
-   * privatePdfPath doit être un chemin de stockage,
-   * jamais une URL.
+   * Un chemin privé doit rester un chemin Storage.
+   *
+   * Les URL signées/publics/data/javascript sont refusées.
    */
   if (
-    /^https?:\/\//i.test(
-      path,
-    ) ||
-    /^data:/i.test(
-      path,
-    ) ||
-    /^javascript:/i.test(
-      path,
-    )
+    /^https?:\/\//i.test(path) ||
+    /^data:/i.test(path) ||
+    /^javascript:/i.test(path)
   ) {
     throw new CoursePrivateStorageError({
       code:
         "STORAGE_PATH_INVALID",
 
       message:
-        "privatePdfPath doit contenir un chemin de stockage privé et non une URL.",
+        "Le chemin privé doit contenir un chemin Storage et non une URL.",
     });
   }
 
-  /**
-   * Supabase attend le chemin relatif au bucket.
-   */
-  path =
-    path
-      .replace(
-        /\\/g,
-        "/",
-      )
-      .replace(
-        /^\/+/,
-        "",
-      );
+  path = path
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "");
 
   if (!path) {
     throw new CoursePrivateStorageError({
@@ -455,13 +526,10 @@ function normalizePrivatePdfPath(
         "STORAGE_PATH_INVALID",
 
       message:
-        "Le chemin privé du PDF est invalide.",
+        "Le chemin privé du fichier est invalide.",
     });
   }
 
-  /**
-   * Empêche les segments suspects.
-   */
   const segments =
     path.split("/");
 
@@ -478,13 +546,10 @@ function normalizePrivatePdfPath(
         "STORAGE_PATH_INVALID",
 
       message:
-        "Le chemin privé du PDF contient un segment interdit.",
+        "Le chemin privé contient un segment interdit.",
     });
   }
 
-  /**
-   * Protection contre caractères de contrôle.
-   */
   if (
     /[\u0000-\u001F\u007F]/.test(
       path,
@@ -495,11 +560,84 @@ function normalizePrivatePdfPath(
         "STORAGE_PATH_INVALID",
 
       message:
-        "Le chemin privé du PDF contient des caractères interdits.",
+        "Le chemin privé contient des caractères interdits.",
     });
   }
 
   return path;
+}
+
+/**
+ * Alias historique interne.
+ */
+
+function normalizePrivatePdfPath(
+  value: string,
+): string {
+  return normalizePrivateStoragePath(
+    value,
+  );
+}
+
+/**
+ * ============================================================================
+ * TYPE DE FICHIER
+ * ============================================================================
+ */
+
+function inferFileTypeFromPath(
+  path: string,
+): CoursePrivateFileType {
+  const lowerPath =
+    path.toLowerCase();
+
+  if (
+    lowerPath.endsWith(".doc") ||
+    lowerPath.endsWith(".docx")
+  ) {
+    return "WORD";
+  }
+
+  if (
+    lowerPath.endsWith(".zip")
+  ) {
+    return "ZIP";
+  }
+
+  return "PDF";
+}
+
+function normalizeCourseFileType({
+  type,
+  path,
+}: {
+  type?:
+    | CoursePrivateFileType
+    | null;
+
+  path: string;
+}): CoursePrivateFileType {
+  if (!type) {
+    return inferFileTypeFromPath(
+      path,
+    );
+  }
+
+  if (
+    type !== "PDF" &&
+    type !== "WORD" &&
+    type !== "ZIP"
+  ) {
+    throw new CoursePrivateStorageError({
+      code:
+        "STORAGE_FILE_TYPE_INVALID",
+
+      message:
+        "Le type du fichier privé est invalide.",
+    });
+  }
+
+  return type;
 }
 
 /**
@@ -514,32 +652,65 @@ function getFilenameFromPath(
   const parts =
     path.split("/");
 
-  const lastPart =
+  return (
     parts[
       parts.length - 1
-    ];
-
-  return (
-    lastPart ||
-    "formation-afriskill-ai.pdf"
+    ] ||
+    "ressource-afriskill-ai"
   );
 }
 
-function normalizePdfFilename({
+function getExpectedExtension({
+  type,
+  source,
+}: {
+  type: CoursePrivateFileType;
+  source: string;
+}):
+  | ".pdf"
+  | ".doc"
+  | ".docx"
+  | ".zip" {
+  const lower =
+    source.toLowerCase();
+
+  switch (type) {
+    case "PDF":
+      return ".pdf";
+
+    case "ZIP":
+      return ".zip";
+
+    case "WORD":
+      return lower.endsWith(".doc")
+        ? ".doc"
+        : ".docx";
+  }
+}
+
+function normalizePrivateFilename({
   filename,
   path,
+  type,
 }: {
   filename?:
     | string
     | null;
 
   path: string;
+
+  type: CoursePrivateFileType;
 }): string {
   const source =
     filename?.trim() ||
-    getFilenameFromPath(
-      path,
-    );
+    getFilenameFromPath(path);
+
+  const extension =
+    getExpectedExtension({
+      type,
+      source:
+        source || path,
+    });
 
   let cleaned =
     source
@@ -559,68 +730,130 @@ function normalizePdfFilename({
 
   if (!cleaned) {
     cleaned =
-      "formation-afriskill-ai.pdf";
+      `ressource-afriskill-ai${extension}`;
   }
+
+  /**
+   * On évite de créer :
+   *
+   * fichier.pdf.pdf
+   * fichier.zip.zip
+   *
+   * et on corrige une extension incohérente avec le type.
+   */
+  const knownExtensionMatch =
+    cleaned.match(
+      /\.(pdf|docx?|zip)$/i,
+    );
+
+  if (knownExtensionMatch) {
+    cleaned =
+      cleaned.slice(
+        0,
+        -knownExtensionMatch[0]
+          .length,
+      );
+  }
+
+  cleaned =
+    cleaned.trim();
+
+  if (!cleaned) {
+    cleaned =
+      "ressource-afriskill-ai";
+  }
+
+  const maximumBaseLength =
+    MAX_FILENAME_LENGTH -
+    extension.length;
 
   if (
     cleaned.length >
-    MAX_FILENAME_LENGTH
+    maximumBaseLength
   ) {
-    const extension =
-      cleaned
-        .toLowerCase()
-        .endsWith(".pdf")
-        ? ".pdf"
-        : "";
-
-    const maxBaseLength =
-      MAX_FILENAME_LENGTH -
-      extension.length;
-
     cleaned =
       cleaned
         .slice(
           0,
-          maxBaseLength,
+          maximumBaseLength,
         )
         .trim();
-
-    cleaned +=
-      extension;
   }
 
-  if (
-    !cleaned
-      .toLowerCase()
-      .endsWith(".pdf")
-  ) {
-    cleaned +=
-      ".pdf";
-  }
+  cleaned += extension;
 
   if (
+    !cleaned ||
     cleaned.length >
-    MAX_FILENAME_LENGTH
+      MAX_FILENAME_LENGTH
   ) {
-    cleaned =
-      `${cleaned.slice(
-        0,
-        MAX_FILENAME_LENGTH -
-          4,
-      )}.pdf`;
-  }
-
-  if (!cleaned) {
     throw new CoursePrivateStorageError({
       code:
         "STORAGE_FILENAME_INVALID",
 
       message:
-        "Le nom du PDF est invalide.",
+        "Le nom du fichier privé est invalide.",
     });
   }
 
   return cleaned;
+}
+
+/**
+ * Ancienne normalisation PDF.
+ *
+ * Conservée pour assurer une compatibilité maximale.
+ */
+
+function normalizePdfFilename({
+  filename,
+  path,
+}: {
+  filename?:
+    | string
+    | null;
+
+  path: string;
+}): string {
+  return normalizePrivateFilename({
+    filename,
+    path,
+    type: "PDF",
+  });
+}
+
+/**
+ * ============================================================================
+ * MIME
+ * ============================================================================
+ */
+
+function normalizeMimeType(
+  value:
+    | string
+    | null
+    | undefined,
+): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized =
+    value
+      .trim()
+      .toLowerCase();
+
+  if (
+    !normalized ||
+    normalized.length > 255 ||
+    /[\u0000-\u001F\u007F]/.test(
+      normalized,
+    )
+  ) {
+    return null;
+  }
+
+  return normalized;
 }
 
 /**
@@ -634,16 +867,12 @@ function normalizeExpiresInSeconds(
     | number
     | undefined,
 ): number {
-  if (
-    value === undefined
-  ) {
-    return DEFAULT_COURSE_PDF_SIGNED_URL_TTL_SECONDS;
+  if (value === undefined) {
+    return DEFAULT_COURSE_FILE_SIGNED_URL_TTL_SECONDS;
   }
 
   if (
-    !Number.isFinite(
-      value,
-    )
+    !Number.isFinite(value)
   ) {
     throw new CoursePrivateStorageError({
       code:
@@ -655,9 +884,7 @@ function normalizeExpiresInSeconds(
   }
 
   const seconds =
-    Math.floor(
-      value,
-    );
+    Math.floor(value);
 
   if (
     seconds <
@@ -704,13 +931,8 @@ function assertSignedUrl(
 
   try {
     const url =
-      new URL(
-        normalized,
-      );
+      new URL(normalized);
 
-    /**
-     * En production, aucune URL HTTP.
-     */
     if (
       process.env.NODE_ENV ===
         "production" &&
@@ -744,26 +966,39 @@ function assertSignedUrl(
 
 /**
  * ============================================================================
- * GÉNÉRATION DE L'URL SIGNÉE
+ * GÉNÉRATION D'UN ACCÈS PRIVÉ GÉNÉRIQUE
  * ============================================================================
  */
 
-export async function createCoursePrivatePdfAccess(
-  input: CoursePrivatePdfInput,
-): Promise<CoursePrivatePdfAccess> {
-  const privatePdfPath =
-    normalizePrivatePdfPath(
-      input.privatePdfPath,
+export async function createCoursePrivateFileAccess(
+  input: CoursePrivateFileInput,
+): Promise<CoursePrivateFileAccessResult> {
+  const path =
+    normalizePrivateStoragePath(
+      input.path,
     );
 
+  const type =
+    normalizeCourseFileType({
+      type:
+        input.type,
+      path,
+    });
+
   const filename =
-    normalizePdfFilename({
+    normalizePrivateFilename({
       filename:
         input.filename,
 
-      path:
-        privatePdfPath,
+      path,
+
+      type,
     });
+
+  const mimeType =
+    normalizeMimeType(
+      input.mimeType,
+    );
 
   const expiresInSeconds =
     normalizeExpiresInSeconds(
@@ -778,26 +1013,20 @@ export async function createCoursePrivatePdfAccess(
 
   try {
     /**
-     * createSignedUrl() ne rend PAS le fichier public.
+     * createSignedUrl() ne rend jamais le fichier public.
      *
-     * Supabase génère uniquement un accès temporaire.
+     * Supabase fournit uniquement un accès temporaire.
      */
     const {
       data,
       error,
     } =
       await supabase.storage
-        .from(
-          bucket,
-        )
+        .from(bucket)
         .createSignedUrl(
-          privatePdfPath,
+          path,
           expiresInSeconds,
           {
-            /**
-             * Demande au navigateur de présenter
-             * un nom de téléchargement propre.
-             */
             download:
               filename,
           },
@@ -805,13 +1034,12 @@ export async function createCoursePrivatePdfAccess(
 
     if (error) {
       /**
-       * Ne pas logger :
+       * Ne jamais logger :
        *
-       * - la Service Role Key ;
+       * - la clé Supabase ;
        * - l'URL signée ;
-       * - le contenu du PDF.
-       *
-       * Le chemin n'est pas non plus envoyé au client.
+       * - le contenu du fichier ;
+       * - le chemin privé.
        */
       console.error(
         "[COURSE_PRIVATE_STORAGE_SIGN_FAILED]",
@@ -823,6 +1051,8 @@ export async function createCoursePrivatePdfAccess(
             error.message,
 
           bucket,
+
+          type,
         },
       );
 
@@ -831,7 +1061,7 @@ export async function createCoursePrivatePdfAccess(
           "STORAGE_SIGNED_URL_FAILED",
 
         message:
-          "Impossible de générer l'accès sécurisé au PDF de la formation.",
+          "Impossible de générer l'accès sécurisé à une ressource de la formation.",
 
         cause:
           error,
@@ -852,11 +1082,10 @@ export async function createCoursePrivatePdfAccess(
 
     return {
       url,
-
       filename,
-
+      type,
+      mimeType,
       expiresInSeconds,
-
       expiresAt,
     };
   } catch (error) {
@@ -878,9 +1107,12 @@ export async function createCoursePrivatePdfAccess(
               error.message,
 
             bucket,
+
+            type,
           }
         : {
             bucket,
+            type,
           },
     );
 
@@ -889,7 +1121,7 @@ export async function createCoursePrivatePdfAccess(
         "STORAGE_SIGNED_URL_FAILED",
 
       message:
-        "Impossible de préparer le PDF sécurisé de la formation.",
+        "Impossible de préparer l'accès sécurisé à une ressource de la formation.",
 
       cause:
         error,
@@ -899,21 +1131,129 @@ export async function createCoursePrivatePdfAccess(
 
 /**
  * ============================================================================
+ * GÉNÉRATION DE PLUSIEURS ACCÈS
+ * ============================================================================
+ *
+ * Utilisé lorsqu'une formation contient plusieurs CourseFile.
+ *
+ * Chaque fichier reçoit sa propre URL signée.
+ */
+
+export async function createCoursePrivateFileAccesses(
+  inputs: CoursePrivateFileInput[],
+): Promise<CoursePrivateFileAccessResult[]> {
+  if (!Array.isArray(inputs)) {
+    throw new CoursePrivateStorageError({
+      code:
+        "STORAGE_PATH_INVALID",
+
+      message:
+        "La liste des fichiers privés est invalide.",
+    });
+  }
+
+  if (inputs.length === 0) {
+    return [];
+  }
+
+  /**
+   * Une formation peut avoir plusieurs ressources.
+   *
+   * Promise.all est adapté ici car chaque signature est indépendante
+   * et aucun état métier n'est modifié.
+   */
+  return Promise.all(
+    inputs.map((input) =>
+      createCoursePrivateFileAccess(
+        input,
+      ),
+    ),
+  );
+}
+
+/**
+ * ============================================================================
+ * COMPATIBILITÉ AVEC L'ANCIEN PDF
+ * ============================================================================
+ *
+ * Cette fonction conserve exactement le contrat déjà utilisé ailleurs :
+ *
+ * createCoursePrivatePdfAccess({
+ *   privatePdfPath,
+ *   filename
+ * })
+ *
+ * Aucun appel existant n'a besoin d'être modifié immédiatement.
+ */
+
+export async function createCoursePrivatePdfAccess(
+  input: CoursePrivatePdfInput,
+): Promise<CoursePrivatePdfAccess> {
+  const privatePdfPath =
+    normalizePrivatePdfPath(
+      input.privatePdfPath,
+    );
+
+  const filename =
+    normalizePdfFilename({
+      filename:
+        input.filename,
+
+      path:
+        privatePdfPath,
+    });
+
+  const result =
+    await createCoursePrivateFileAccess({
+      path:
+        privatePdfPath,
+
+      filename,
+
+      type:
+        "PDF",
+
+      mimeType:
+        "application/pdf",
+
+      expiresInSeconds:
+        input.expiresInSeconds,
+    });
+
+  return {
+    url:
+      result.url,
+
+    filename:
+      result.filename,
+
+    expiresInSeconds:
+      result.expiresInSeconds,
+
+    expiresAt:
+      result.expiresAt,
+  };
+}
+
+/**
+ * ============================================================================
  * ADAPTATEUR POUR lib/course-delivery.ts
  * ============================================================================
  *
- * Cet objet sera injecté directement dans deliverPaidOrder().
+ * Ancien :
  *
- * Exemple :
+ * coursePrivateFileAccess.createSignedPdfUrl(...)
  *
- * await deliverPaidOrder({
- *   orderId,
- *   paymentId,
- *   emailSender: courseDeliveryEmailSender,
- *   privateFileAccess: coursePrivateFileAccess,
- * });
+ * Nouveau :
  *
- * ============================================================================
+ * coursePrivateFileAccess.createSignedFileUrl(...)
+ *
+ * Multi :
+ *
+ * coursePrivateFileAccess.createSignedFileUrls(...)
+ *
+ * L'ancienne méthode reste disponible pour éviter toute cassure pendant
+ * la migration du système de livraison.
  */
 
 export const coursePrivateFileAccess:
@@ -937,5 +1277,61 @@ export const coursePrivateFileAccess:
       filename:
         result.filename,
     };
+  },
+
+  async createSignedFileUrl({
+    path,
+    filename,
+    type,
+    mimeType,
+    expiresInSeconds,
+  }) {
+    const result =
+      await createCoursePrivateFileAccess({
+        path,
+        filename,
+        type,
+        mimeType,
+        expiresInSeconds,
+      });
+
+    return {
+      url:
+        result.url,
+
+      filename:
+        result.filename,
+
+      type:
+        result.type,
+
+      mimeType:
+        result.mimeType,
+    };
+  },
+
+  async createSignedFileUrls(
+    inputs,
+  ) {
+    const results =
+      await createCoursePrivateFileAccesses(
+        inputs,
+      );
+
+    return results.map(
+      (result) => ({
+        url:
+          result.url,
+
+        filename:
+          result.filename,
+
+        type:
+          result.type,
+
+        mimeType:
+          result.mimeType,
+      }),
+    );
   },
 };

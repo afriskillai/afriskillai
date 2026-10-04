@@ -43,6 +43,11 @@ export type CourseImage = Prisma.CourseImageModel
  */
 export type CourseDescriptionImage = Prisma.CourseDescriptionImageModel
 /**
+ * Model CourseFile
+ * 
+ */
+export type CourseFile = Prisma.CourseFileModel
+/**
  * Model CourseModule
  * 
  */
