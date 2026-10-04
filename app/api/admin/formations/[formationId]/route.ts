@@ -9,6 +9,10 @@ import { db } from "@/lib/db";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/* =========================================================
+   LIMITES GÉNÉRALES
+   ========================================================= */
+
 const MIN_TITLE_LENGTH = 3;
 const MAX_TITLE_LENGTH = 150;
 
@@ -25,6 +29,13 @@ const MAX_RICH_DOCUMENT_NODES = 5_000;
 const MAX_RICH_TEXT_LENGTH = 50_000;
 const MAX_RICH_URL_LENGTH = 2_048;
 
+const MAX_VIDEO_ID_LENGTH = 128;
+const MAX_VIDEO_TITLE_LENGTH = 300;
+
+/* =========================================================
+   TIPTAP — TYPES AUTORISÉS
+   ========================================================= */
+
 const ALLOWED_NODE_TYPES = new Set([
   "doc",
   "paragraph",
@@ -37,6 +48,10 @@ const ALLOWED_NODE_TYPES = new Set([
   "hardBreak",
   "horizontalRule",
   "image",
+
+  // Vidéos publiques de démonstration intégrées
+  // dans la description enrichie.
+  "video",
 ]);
 
 const ALLOWED_MARK_TYPES = new Set([
@@ -46,6 +61,15 @@ const ALLOWED_MARK_TYPES = new Set([
   "code",
   "link",
 ]);
+
+const ALLOWED_VIDEO_PROVIDERS = new Set([
+  "youtube",
+  "vimeo",
+]);
+
+/* =========================================================
+   TYPES
+   ========================================================= */
 
 type RouteContext = {
   params: Promise<{
@@ -82,6 +106,15 @@ type ValidationResult =
   | {
       success: true;
       value: Record<string, unknown>;
+    }
+  | {
+      success: false;
+      message: string;
+    };
+
+type SimpleValidationResult =
+  | {
+      success: true;
     }
   | {
       success: false;
@@ -414,25 +447,15 @@ export async function PUT(
 /**
  * Suppression sécurisée d'une formation.
  *
- * Règles :
+ * Une formation possédant un historique payé n'est jamais
+ * supprimée physiquement.
  *
- * 1. Une formation qui n'a jamais été réellement achetée
- *    peut être supprimée définitivement.
+ * Les références appartenant uniquement à des commandes
+ * non payées peuvent être supprimées afin de permettre
+ * la suppression des formations de test.
  *
- * 2. Les OrderItem appartenant à des commandes NON PAYÉES
- *    ne doivent pas empêcher la suppression d'une formation
- *    de test.
- *
- * 3. Les commandes et paiements ne sont jamais supprimés ici.
- *
- * 4. Une formation liée à une commande PAYÉE, un accès client
- *    ou toute autre donnée métier protégée n'est jamais détruite.
- *
- * 5. Si une contrainte métier protégée subsiste, la formation
- *    est archivée et retirée de la vente.
- *
- * Cette stratégie permet donc de supprimer les formations de test
- * sans détruire l'historique financier réel de la plateforme.
+ * Les commandes, paiements et utilisateurs ne sont jamais
+ * supprimés ici.
  */
 export async function DELETE(
   _request: Request,
@@ -506,38 +529,36 @@ export async function DELETE(
       );
     }
 
-    /*
-     * ---------------------------------------------------------
-     * PROTECTION DE L'HISTORIQUE PAYÉ
-     * ---------------------------------------------------------
-     *
-     * Si au moins une ligne de commande de cette formation
-     * appartient à une commande réellement payée, la formation
-     * ne doit jamais être supprimée physiquement.
-     */
-    const hasPaidOrder = formation.orderItems.some(
-      (item) => item.order.status === "PAID",
-    );
+    /* ---------------------------------------------------------
+       PROTECTION DE L'HISTORIQUE PAYÉ
+       --------------------------------------------------------- */
+
+    const hasPaidOrder =
+      formation.orderItems.some(
+        (item) =>
+          item.order.status === "PAID",
+      );
 
     if (hasPaidOrder) {
-      const archivedFormation = await db.course.update({
-        where: {
-          id,
-        },
+      const archivedFormation =
+        await db.course.update({
+          where: {
+            id,
+          },
 
-        data: {
-          status: CourseStatus.ARCHIVED,
-          publishedAt: null,
-        },
+          data: {
+            status: CourseStatus.ARCHIVED,
+            publishedAt: null,
+          },
 
-        select: {
-          id: true,
-          title: true,
-          status: true,
-          publishedAt: true,
-          updatedAt: true,
-        },
-      });
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            publishedAt: true,
+            updatedAt: true,
+          },
+        });
 
       return NextResponse.json({
         success: true,
@@ -552,26 +573,10 @@ export async function DELETE(
       });
     }
 
-    /*
-     * ---------------------------------------------------------
-     * SUPPRESSION DES RÉFÉRENCES DE TEST / NON PAYÉES
-     * ---------------------------------------------------------
-     *
-     * On ne supprime PAS :
-     *
-     * - les commandes ;
-     * - les paiements ;
-     * - les utilisateurs.
-     *
-     * On détache uniquement cette formation des commandes qui
-     * n'ont jamais été payées.
-     *
-     * Cela règle notamment :
-     *
-     * OrderItem_courseId_fkey
-     *
-     * qui empêchait la suppression de "formation 456".
-     */
+    /* ---------------------------------------------------------
+       SUPPRESSION DES RÉFÉRENCES NON PAYÉES
+       --------------------------------------------------------- */
+
     await db.$transaction(
       async (tx) => {
         await tx.orderItem.deleteMany({
@@ -586,17 +591,6 @@ export async function DELETE(
           },
         });
 
-        /*
-         * -----------------------------------------------------
-         * TENTATIVE DE SUPPRESSION RÉELLE
-         * -----------------------------------------------------
-         *
-         * Les relations configurées en cascade seront nettoyées
-         * automatiquement par PostgreSQL.
-         *
-         * Si une relation protégée subsiste, Prisma déclenchera
-         * P2003. Elle sera gérée juste après la transaction.
-         */
         await tx.course.delete({
           where: {
             id,
@@ -624,14 +618,10 @@ export async function DELETE(
       },
     });
   } catch (error) {
-    /*
-     * ---------------------------------------------------------
-     * FORMATION DÉJÀ SUPPRIMÉE
-     * ---------------------------------------------------------
-     *
-     * Rend la suppression plus robuste lorsqu'une deuxième
-     * requête DELETE arrive après une suppression réussie.
-     */
+    /* ---------------------------------------------------------
+       FORMATION DÉJÀ SUPPRIMÉE
+       --------------------------------------------------------- */
+
     if (
       error instanceof
         Prisma.PrismaClientKnownRequestError &&
@@ -648,29 +638,21 @@ export async function DELETE(
       });
     }
 
-    /*
-     * ---------------------------------------------------------
-     * CONTRAINTE MÉTIER PROTÉGÉE
-     * ---------------------------------------------------------
-     *
-     * Une relation existe encore :
-     *
-     * - accès client ;
-     * - inscription ;
-     * - livraison ;
-     * - commande payée ;
-     * - ou autre historique protégé.
-     *
-     * Dans ce cas on ne force JAMAIS la suppression.
-     */
+    /* ---------------------------------------------------------
+       CONTRAINTE MÉTIER PROTÉGÉE
+       --------------------------------------------------------- */
+
     if (
       error instanceof
         Prisma.PrismaClientKnownRequestError &&
       error.code === "P2003"
     ) {
       try {
-        const { formationId } = await context.params;
-        const id = normalizeFormationId(formationId);
+        const { formationId } =
+          await context.params;
+
+        const id =
+          normalizeFormationId(formationId);
 
         if (!id) {
           return NextResponse.json(
@@ -716,7 +698,8 @@ export async function DELETE(
             },
 
             data: {
-              status: CourseStatus.ARCHIVED,
+              status:
+                CourseStatus.ARCHIVED,
               publishedAt: null,
             },
 
@@ -828,7 +811,8 @@ function validateUpdateBody(
 
   if (body.shortDescription !== undefined) {
     if (
-      typeof body.shortDescription !== "string"
+      typeof body.shortDescription !==
+      "string"
     ) {
       return invalid(
         "La description courte est invalide.",
@@ -866,7 +850,8 @@ function validateUpdateBody(
 
   if (body.description !== undefined) {
     if (
-      typeof body.description !== "string"
+      typeof body.description !==
+      "string"
     ) {
       return invalid(
         "La description complète est invalide.",
@@ -930,9 +915,8 @@ function validateUpdateBody(
      --------------------------------------------------------- */
 
   if (body.price !== undefined) {
-    const price = parseMoneyValue(
-      body.price,
-    );
+    const price =
+      parseMoneyValue(body.price);
 
     if (price === null) {
       return invalid(
@@ -972,24 +956,20 @@ function validateUpdateBody(
     }
   }
 
-  /*
-   * Validation croisée prix / promotion.
-   *
-   * Lorsqu'un seul des deux prix est modifié,
-   * on ne possède pas ici l'autre valeur complète.
-   * La validation principale est donc effectuée
-   * sur les valeurs effectivement reçues.
-   */
   if (
     data.price !== undefined &&
     data.promotionalPrice !== undefined &&
     data.promotionalPrice !== null
   ) {
-    const price = data.price as number;
+    const price =
+      data.price as number;
+
     const promotionalPrice =
       data.promotionalPrice as number;
 
-    if (promotionalPrice >= price) {
+    if (
+      promotionalPrice >= price
+    ) {
       return invalid(
         "Le prix promotionnel doit être inférieur au prix normal.",
       );
@@ -1030,9 +1010,8 @@ function validateUpdateBody(
      --------------------------------------------------------- */
 
   if (body.status !== undefined) {
-    const status = parseCourseStatus(
-      body.status,
-    );
+    const status =
+      parseCourseStatus(body.status);
 
     if (!status) {
       return invalid(
@@ -1190,15 +1169,11 @@ function validateRichNode(
     nodes: number;
     textLength: number;
   },
-):
-  | {
-      success: true;
-    }
-  | {
-      success: false;
-      message: string;
-    } {
-  if (depth > MAX_RICH_DOCUMENT_DEPTH) {
+): SimpleValidationResult {
+  if (
+    depth >
+    MAX_RICH_DOCUMENT_DEPTH
+  ) {
     return {
       success: false,
       message:
@@ -1293,8 +1268,8 @@ function validateRichNode(
       node.attrs.level;
 
     if (
-      !Number.isInteger(level) ||
       typeof level !== "number" ||
+      !Number.isInteger(level) ||
       level < 1 ||
       level > 4
     ) {
@@ -1316,6 +1291,19 @@ function validateRichNode(
 
     if (!imageValidation.success) {
       return imageValidation;
+    }
+  }
+
+  /* ---------------------------------------------------------
+     VIDÉO PUBLIQUE DE DÉMONSTRATION
+     --------------------------------------------------------- */
+
+  if (node.type === "video") {
+    const videoValidation =
+      validateVideoNode(node.attrs);
+
+    if (!videoValidation.success) {
+      return videoValidation;
     }
   }
 
@@ -1355,7 +1343,9 @@ function validateRichNode(
       };
     }
 
-    for (const child of node.content) {
+    for (
+      const child of node.content
+    ) {
       const childValidation =
         validateRichNode(
           child,
@@ -1380,14 +1370,7 @@ function validateRichNode(
 
 function validateRichMark(
   value: unknown,
-):
-  | {
-      success: true;
-    }
-  | {
-      success: false;
-      message: string;
-    } {
+): SimpleValidationResult {
   if (!isPlainObject(value)) {
     return {
       success: false,
@@ -1396,7 +1379,8 @@ function validateRichMark(
     };
   }
 
-  const mark = value as RichMark;
+  const mark =
+    value as RichMark;
 
   if (
     typeof mark.type !== "string" ||
@@ -1447,14 +1431,7 @@ function validateRichMark(
 
 function validateImageNode(
   attrs: unknown,
-):
-  | {
-      success: true;
-    }
-  | {
-      success: false;
-      message: string;
-    } {
+): SimpleValidationResult {
   if (!isPlainObject(attrs)) {
     return {
       success: false,
@@ -1468,7 +1445,8 @@ function validateImageNode(
   if (
     typeof src !== "string" ||
     src.length === 0 ||
-    src.length > MAX_RICH_URL_LENGTH ||
+    src.length >
+      MAX_RICH_URL_LENGTH ||
     !isHttpsUrl(src)
   ) {
     return {
@@ -1482,8 +1460,10 @@ function validateImageNode(
     attrs.imageId !== undefined &&
     attrs.imageId !== null &&
     (
-      typeof attrs.imageId !== "string" ||
-      attrs.imageId.trim().length === 0
+      typeof attrs.imageId !==
+        "string" ||
+      attrs.imageId.trim().length ===
+        0
     )
   ) {
     return {
@@ -1523,6 +1503,293 @@ function validateImageNode(
 }
 
 /* =========================================================
+   VALIDATION VIDÉO TIPTAP
+   ========================================================= */
+
+/**
+ * Les vidéos intégrées dans la description sont uniquement
+ * des vidéos publiques de démonstration.
+ *
+ * Aucun HTML ou iframe fourni par le client n'est accepté.
+ *
+ * Le renderer public reconstruit lui-même l'URL d'intégration
+ * à partir du provider + videoId.
+ */
+function validateVideoNode(
+  attrs: unknown,
+): SimpleValidationResult {
+  if (!isPlainObject(attrs)) {
+    return {
+      success: false,
+      message:
+        "Une vidéo de la description est invalide.",
+    };
+  }
+
+  const provider = attrs.provider;
+  const videoId = attrs.videoId;
+  const videoUrl = attrs.videoUrl;
+  const videoTitle = attrs.videoTitle;
+
+  /* ---------------------------------------------------------
+     FOURNISSEUR
+     --------------------------------------------------------- */
+
+  if (
+    typeof provider !== "string" ||
+    !ALLOWED_VIDEO_PROVIDERS.has(
+      provider,
+    )
+  ) {
+    return {
+      success: false,
+      message:
+        "Le fournisseur de la vidéo est invalide. Seules les vidéos YouTube et Vimeo sont autorisées.",
+    };
+  }
+
+  /* ---------------------------------------------------------
+     IDENTIFIANT VIDÉO
+     --------------------------------------------------------- */
+
+  if (
+    typeof videoId !== "string" ||
+    videoId.trim().length === 0 ||
+    videoId.length >
+      MAX_VIDEO_ID_LENGTH
+  ) {
+    return {
+      success: false,
+      message:
+        "L’identifiant de la vidéo est invalide.",
+    };
+  }
+
+  const normalizedVideoId =
+    videoId.trim();
+
+  if (
+    provider === "youtube" &&
+    !isValidYouTubeVideoId(
+      normalizedVideoId,
+    )
+  ) {
+    return {
+      success: false,
+      message:
+        "L’identifiant de la vidéo YouTube est invalide.",
+    };
+  }
+
+  if (
+    provider === "vimeo" &&
+    !isValidVimeoVideoId(
+      normalizedVideoId,
+    )
+  ) {
+    return {
+      success: false,
+      message:
+        "L’identifiant de la vidéo Vimeo est invalide.",
+    };
+  }
+
+  /* ---------------------------------------------------------
+     URL CANONIQUE
+     --------------------------------------------------------- */
+
+  if (
+    videoUrl !== undefined &&
+    videoUrl !== null &&
+    videoUrl !== ""
+  ) {
+    if (
+      typeof videoUrl !== "string" ||
+      videoUrl.length >
+        MAX_RICH_URL_LENGTH
+    ) {
+      return {
+        success: false,
+        message:
+          "L’URL de la vidéo est invalide.",
+      };
+    }
+
+    if (
+      !isAllowedVideoUrl(
+        videoUrl,
+        provider,
+        normalizedVideoId,
+      )
+    ) {
+      return {
+        success: false,
+        message:
+          "L’URL de la vidéo ne correspond pas à une vidéo YouTube ou Vimeo autorisée.",
+      };
+    }
+  }
+
+  /* ---------------------------------------------------------
+     TITRE
+     --------------------------------------------------------- */
+
+  if (
+    videoTitle !== undefined &&
+    videoTitle !== null
+  ) {
+    if (
+      typeof videoTitle !== "string" ||
+      videoTitle.length >
+        MAX_VIDEO_TITLE_LENGTH
+    ) {
+      return {
+        success: false,
+        message:
+          "Le titre de la vidéo est invalide.",
+      };
+    }
+  }
+
+  return {
+    success: true,
+  };
+}
+
+/* =========================================================
+   VALIDATION IDENTIFIANT YOUTUBE
+   ========================================================= */
+
+function isValidYouTubeVideoId(
+  value: string,
+) {
+  /*
+   * Les identifiants YouTube classiques utilisent
+   * 11 caractères.
+   *
+   * On limite volontairement aux caractères utilisés
+   * dans les IDs YouTube.
+   */
+  return /^[A-Za-z0-9_-]{11}$/.test(
+    value,
+  );
+}
+
+/* =========================================================
+   VALIDATION IDENTIFIANT VIMEO
+   ========================================================= */
+
+function isValidVimeoVideoId(
+  value: string,
+) {
+  /*
+   * Les identifiants Vimeo publics sont numériques.
+   */
+  return /^\d{5,20}$/.test(value);
+}
+
+/* =========================================================
+   VALIDATION URL VIDÉO
+   ========================================================= */
+
+function isAllowedVideoUrl(
+  value: string,
+  provider: string,
+  videoId: string,
+) {
+  try {
+    const url = new URL(value);
+
+    if (
+      url.protocol !== "https:" &&
+      url.protocol !== "http:"
+    ) {
+      return false;
+    }
+
+    const hostname =
+      url.hostname
+        .toLowerCase()
+        .replace(/^www\./, "");
+
+    if (provider === "youtube") {
+      if (
+        hostname === "youtu.be"
+      ) {
+        const id =
+          url.pathname
+            .split("/")
+            .filter(Boolean)[0];
+
+        return id === videoId;
+      }
+
+      if (
+        hostname === "youtube.com" ||
+        hostname ===
+          "m.youtube.com" ||
+        hostname ===
+          "youtube-nocookie.com"
+      ) {
+        const queryId =
+          url.searchParams.get("v");
+
+        if (queryId === videoId) {
+          return true;
+        }
+
+        const segments =
+          url.pathname
+            .split("/")
+            .filter(Boolean);
+
+        const knownPrefixes =
+          new Set([
+            "embed",
+            "shorts",
+            "live",
+          ]);
+
+        if (
+          segments.length >= 2 &&
+          knownPrefixes.has(
+            segments[0],
+          ) &&
+          segments[1] === videoId
+        ) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    if (provider === "vimeo") {
+      if (
+        hostname !== "vimeo.com" &&
+        hostname !==
+          "player.vimeo.com"
+      ) {
+        return false;
+      }
+
+      const segments =
+        url.pathname
+          .split("/")
+          .filter(Boolean);
+
+      return segments.includes(
+        videoId,
+      );
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/* =========================================================
    STATUT
    ========================================================= */
 
@@ -1537,19 +1804,22 @@ function parseCourseStatus(
     value.trim().toUpperCase();
 
   if (
-    normalized === CourseStatus.DRAFT
+    normalized ===
+    CourseStatus.DRAFT
   ) {
     return CourseStatus.DRAFT;
   }
 
   if (
-    normalized === CourseStatus.PUBLISHED
+    normalized ===
+    CourseStatus.PUBLISHED
   ) {
     return CourseStatus.PUBLISHED;
   }
 
   if (
-    normalized === CourseStatus.ARCHIVED
+    normalized ===
+    CourseStatus.ARCHIVED
   ) {
     return CourseStatus.ARCHIVED;
   }
@@ -1630,8 +1900,10 @@ function isAllowedPrivateUrl(
     return (
       url.protocol === "http:" &&
       (
-        url.hostname === "localhost" ||
-        url.hostname === "127.0.0.1" ||
+        url.hostname ===
+          "localhost" ||
+        url.hostname ===
+          "127.0.0.1" ||
         url.hostname === "::1"
       )
     );
