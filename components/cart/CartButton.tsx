@@ -13,6 +13,8 @@ function CartIcon() {
   return (
     <svg
       aria-hidden="true"
+      width={20}
+      height={20}
       viewBox="0 0 24 24"
       fill="none"
       className="h-5 w-5"

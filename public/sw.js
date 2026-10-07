@@ -1,7 +1,6 @@
-"use strict";
+﻿"use strict";
 
-const CACHE_VERSION = "afriskill-ai-static-v1";
-
+const CACHE_VERSION = "afriskill-ai-static-v2";
 const STATIC_ASSETS = [
   "/logo/logo.png",
   "/icon/icon.png",
@@ -11,112 +10,59 @@ const STATIC_ASSETS = [
   "/icons/icon-maskable-512x512.png",
 ];
 
+function isCacheableImage(response) {
+  return response.ok &&
+    response.type === "basic" &&
+    (response.headers.get("content-type") || "").toLowerCase().startsWith("image/");
+}
+
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches
-      .open(CACHE_VERSION)
-      .then((cache) => cache.addAll(STATIC_ASSETS))
-      .then(() => self.skipWaiting())
-      .catch(() => {
-        return self.skipWaiting();
-      }),
-  );
+  event.waitUntil((async () => {
+    try {
+      const cache = await caches.open(CACHE_VERSION);
+      await Promise.all(STATIC_ASSETS.map(async (asset) => {
+        const response = await fetch(asset, { cache: "reload" });
+        if (isCacheableImage(response)) await cache.put(asset, response);
+      }));
+    } catch {
+      // Une panne réseau ne doit pas empêcher le remplacement de l’ancien worker.
+    }
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches
-      .keys()
-      .then((cacheNames) =>
-        Promise.all(
-          cacheNames
-            .filter(
-              (cacheName) =>
-                cacheName.startsWith("afriskill-ai-") &&
-                cacheName !== CACHE_VERSION,
-            )
-            .map((cacheName) =>
-              caches.delete(cacheName),
-            ),
-        ),
-      )
-      .then(() => self.clients.claim()),
-  );
+  event.waitUntil((async () => {
+    const names = await caches.keys();
+    await Promise.all(names
+      .filter(name => name.startsWith("afriskill-ai-") && name !== CACHE_VERSION)
+      .map(name => caches.delete(name)));
+    await self.clients.claim();
+  })());
 });
 
-function isSensitivePath(pathname) {
-  return (
-    pathname.startsWith("/api/") ||
-    pathname.startsWith("/admin") ||
-    pathname.startsWith("/compte") ||
-    pathname.startsWith("/panier")
-  );
-}
-
-function isStaticAssetRequest(request, url) {
-  if (request.method !== "GET") {
-    return false;
-  }
-
-  if (url.origin !== self.location.origin) {
-    return false;
-  }
-
-  return (
-    url.pathname.startsWith("/_next/static/") ||
-    url.pathname.startsWith("/logo/") ||
-    url.pathname.startsWith("/icon/") ||
-    url.pathname.startsWith("/icons/")
-  );
-}
-
 self.addEventListener("fetch", (event) => {
-  const request = event.request;
-
-  if (request.method !== "GET") {
-    return;
-  }
-
+  const { request } = event;
+  if (request.method !== "GET") return;
   const url = new URL(request.url);
 
-  if (url.origin !== self.location.origin) {
-    return;
-  }
+  // Next.js gère lui-même le cache HTTP de ses CSS et scripts versionnés.
+  // Ne pas intercepter ces fichiers, les pages, les API ou les ressources privées.
+  if (url.origin !== self.location.origin || !STATIC_ASSETS.includes(url.pathname)) return;
 
-  if (isSensitivePath(url.pathname)) {
-    return;
-  }
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_VERSION);
+    const cached = await cache.match(request);
+    if (cached && isCacheableImage(cached)) return cached;
 
-  if (!isStaticAssetRequest(request, url)) {
-    return;
-  }
-
-  event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
+    const response = await fetch(request);
+    if (isCacheableImage(response)) {
+      try {
+        await cache.put(request, response.clone());
+      } catch {
+        // Le site reste utilisable si le stockage du navigateur est indisponible.
       }
-
-      return fetch(request).then((networkResponse) => {
-        if (
-          !networkResponse ||
-          !networkResponse.ok ||
-          networkResponse.type !== "basic"
-        ) {
-          return networkResponse;
-        }
-
-        const responseToCache =
-          networkResponse.clone();
-
-        void caches
-          .open(CACHE_VERSION)
-          .then((cache) =>
-            cache.put(request, responseToCache),
-          );
-
-        return networkResponse;
-      });
-    }),
-  );
+    }
+    return response;
+  })());
 });
