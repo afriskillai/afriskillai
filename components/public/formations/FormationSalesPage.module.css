@@ -808,3 +808,38 @@
     display: none;
   }
 }
+/* Price comparison on the public product page. */
+.pricePair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 20px;
+  margin-top: 16px;
+}
+
+.regularPrice {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 12px;
+  border: 1px solid #e4e8ee;
+  border-radius: 8px;
+  background: #f8f9fb;
+  color: #6b7687;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.regularPriceLabel {
+  color: #667185;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.regularPrice del {
+  text-decoration-color: #99a3b2;
+  text-decoration-thickness: 1px;
+}

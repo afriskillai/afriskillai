@@ -573,7 +573,7 @@ export default function FormationOrderBar({
                     sm:text-2xl
                   "
                   style={{
-                    color: "#071936",
+                    color: hasPromotion ? "#08785c" : "#071936",
                     fontWeight: 900,
                   }}
                 >

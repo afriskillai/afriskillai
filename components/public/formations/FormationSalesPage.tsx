@@ -556,14 +556,14 @@ function PremiumPricingCard({
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
-              Prix de la formation
+              {hasPromotion ? "Prix promotionnel" : "Prix de la formation"}
             </p>
 
-            <div className="mt-3 flex flex-wrap items-end gap-x-3 gap-y-2">
+            <div className={styles.pricePair}>
               <span
                 className="text-[2rem] font-black leading-none tracking-[-0.045em] sm:text-[2.6rem]"
                 style={{
-                  color: BRAND_COLORS.navy,
+                  color: hasPromotion ? "#08785c" : BRAND_COLORS.navy,
                   fontWeight: 900,
                 }}
               >
@@ -574,11 +574,14 @@ function PremiumPricingCard({
               </span>
 
               {hasPromotion ? (
-                <span className="pb-1 text-sm font-bold text-slate-500 line-through sm:text-base">
+                <span className={styles.regularPrice}>
+                  <span className={styles.regularPriceLabel}>Prix normal</span>
+                  <del>
                   {formatCoursePrice(
                     course.price,
                     course.currency,
                   )}
+                  </del>
                 </span>
               ) : null}
             </div>
@@ -936,7 +939,7 @@ function PremiumFinalOffer({
             <p
               className="text-3xl font-black leading-none tracking-[-0.045em] sm:text-4xl"
               style={{
-                color: DARK_CARD_COLORS.white,
+                color: hasPromotion ? "#f2bd53" : DARK_CARD_COLORS.white,
                 fontWeight: 900,
               }}
             >
