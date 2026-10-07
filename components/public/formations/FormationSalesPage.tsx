@@ -1,4 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
+import Link from "next/link";
+import styles from "./FormationSalesPage.module.css";
 
 import FormationDescriptionRenderer from "@/components/public/formations/FormationDescriptionRenderer";
 import FormationFaq from "@/components/public/formations/FormationFaq";
@@ -74,7 +76,7 @@ const DARK_CARD_COLORS = {
 
 const heroTitleStyle: CSSProperties = {
   color: BRAND_COLORS.navy,
-  fontWeight: 900,
+  fontWeight: 650,
 };
 
 const darkTitleStyle: CSSProperties = {
@@ -529,7 +531,9 @@ function BenefitItem({
 
 function PremiumPricingCard({
   course,
+  checkoutHref,
 }: {
+  checkoutHref?: string | null;
   course: PublicCourseDetail;
 }) {
   const hasPromotion =
@@ -545,7 +549,7 @@ function PremiumPricingCard({
     getPublicCourseDiscountPercentage(course);
 
   return (
-    <div className="relative overflow-hidden rounded-[1.65rem] border border-slate-200/90 bg-white shadow-[0_20px_55px_rgba(15,23,42,0.09)]">
+    <div className={styles.priceCard}>
       <div className="h-1.5 bg-gradient-to-r from-[#0759D9] via-[#1685F8] to-[#F5AA00]" />
 
       <div className="p-5 sm:p-6">
@@ -624,6 +628,10 @@ function PremiumPricingCard({
             description="L'accès est activé après confirmation du paiement."
           />
         </div>
+      </div>
+      <div className={styles.priceActions}>
+        <FormationOrderBar course={course} checkoutHref={checkoutHref} placement="inline" />
+        <p>Accès activé après confirmation du paiement.</p>
       </div>
     </div>
   );
@@ -721,7 +729,7 @@ function AutomaticDeliverySection() {
           Une fois votre paiement confirmé, votre accès à la
           formation est activé automatiquement. Les éléments
           associés à votre achat sont également envoyés à
-          l'adresse e-mail utilisée pour votre compte.
+          l’adresse e-mail utilisée pour votre compte.
         </p>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -749,7 +757,7 @@ function AutomaticDeliverySection() {
             </p>
 
             <p className="mt-1.5 text-xs font-medium leading-5 text-slate-600">
-              Les informations d'accès prévues sont envoyées automatiquement.
+              Les informations d’accès prévues sont envoyées automatiquement.
             </p>
           </div>
 
@@ -984,257 +992,42 @@ function PremiumFinalOffer({
  * ============================================================================
  */
 
-export default function FormationSalesPage({
-  course,
-  checkoutHref,
-}: FormationSalesPageProps) {
-  const shortDescription =
-    course.shortDescription?.trim() || null;
-
-  return (
-    <>
-      <main className="min-h-screen bg-white pb-44 md:pb-28">
-        {/*
-         * ==================================================================
-         * HERO COMMERCIAL
-         * ==================================================================
-         */}
-
-        <section className="relative isolate overflow-hidden border-b border-slate-200/80 bg-[linear-gradient(180deg,#f6faff_0%,#ffffff_92%)]">
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute left-1/2 top-[-180px] -z-10 h-[520px] w-[900px] -translate-x-1/2 rounded-full bg-blue-100/70 blur-3xl"
-          />
-
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute right-[-180px] top-24 -z-10 h-80 w-80 rounded-full bg-amber-100/60 blur-3xl"
-          />
-
-          <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 sm:py-11 lg:px-8 lg:py-16">
-            <div className="grid items-center gap-9 lg:grid-cols-[minmax(0,1.08fr)_minmax(380px,0.92fr)] lg:gap-12 xl:gap-16">
-              {/*
-               * ============================================================
-               * IMAGE PRINCIPALE
-               * ============================================================
-               */}
-
-              <div className="min-w-0">
-                <div className="relative">
-                  <div
-                    aria-hidden="true"
-                    className="absolute -inset-3 -z-10 rounded-[2.2rem] bg-gradient-to-br from-blue-200/60 via-transparent to-amber-200/50 blur-xl"
-                  />
-
-                  <div className="overflow-hidden rounded-[1.7rem] border border-white bg-white p-1.5 shadow-[0_28px_80px_rgba(15,23,42,0.16)] sm:rounded-[2rem] sm:p-2">
-                    <div className="overflow-hidden rounded-[1.4rem] bg-slate-100 sm:rounded-[1.6rem]">
-                      <FormationPrimaryImage
-                        course={course}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/*
-               * ============================================================
-               * INFORMATIONS PRINCIPALES
-               * ============================================================
-               */}
-
-              <div className="min-w-0">
-                <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white px-3.5 py-2 text-[9px] font-black uppercase tracking-[0.21em] text-blue-700 shadow-sm sm:text-[10px]">
-                  <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-50" />
-
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-600" />
-                  </span>
-
-                  Formation AfriSkill AI
-                </div>
-
-                {/*
-                 * ==========================================================
-                 * TITRE PRINCIPAL
-                 * ==========================================================
-                 */}
-
-                <div className="mt-4 max-w-3xl sm:mt-5">
-                  <h1
-                    className="break-words text-[2.15rem] font-black leading-[0.98] tracking-[-0.055em] sm:text-[2.85rem] sm:leading-[0.98] lg:text-[3.45rem] xl:text-[3.8rem]"
-                    style={heroTitleStyle}
-                  >
-                    {course.title}
-                  </h1>
-
-                  <div
-                    aria-hidden="true"
-                    className="mt-4 flex items-center gap-2"
-                  >
-                    <span className="h-1.5 w-14 rounded-full bg-[#0759D9]" />
-
-                    <span className="h-1.5 w-5 rounded-full bg-[#F5AA00]" />
-                  </div>
-                </div>
-
-                {shortDescription ? (
-                  <p className="mt-5 max-w-2xl text-[15px] font-medium leading-7 text-slate-600 sm:text-lg sm:leading-8">
-                    {shortDescription}
-                  </p>
-                ) : null}
-
-                <div className="mt-7">
-                  <PremiumPricingCard
-                    course={course}
-                  />
-                </div>
-
-                <div className="mt-5 flex items-start gap-2 text-xs font-semibold leading-5 text-slate-600">
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
-                    <CheckIcon />
-                  </span>
-
-                  <span>
-                    Votre accès est activé après validation du paiement.
-                  </span>
-                </div>
-              </div>
+export default function FormationSalesPage({ course, checkoutHref }: FormationSalesPageProps) {
+  const shortDescription = course.shortDescription?.trim() || null;
+  return <>
+    <div className={styles.page}>
+      <section className={styles.hero} aria-labelledby="formation-title">
+        <div className={styles.container}>
+          <nav aria-label="Fil d’Ariane" className={styles.breadcrumb}><Link href="/">Accueil</Link><span aria-hidden="true">/</span><Link href="/formations">Formations</Link><span aria-hidden="true">/</span><span>Votre formation</span></nav>
+          <div className={styles.heroGrid}>
+            <div className={styles.copy}>
+              <p className={styles.eyebrow}>FORMATION · AFRISKILL AI</p>
+              <h1 id="formation-title" className={styles.title} style={heroTitleStyle}>{course.title}</h1>
+              {shortDescription ? <p className={styles.summary}>{shortDescription}</p> : null}
+              <div className={styles.tags}><span>Formation numérique</span><span>Accès personnel</span><span>À votre rythme</span></div>
             </div>
-          </div>
-        </section>
-
-        {/*
-         * ==================================================================
-         * PRÉSENTATION
-         * ==================================================================
-         */}
-
-        <section className="relative bg-white">
-          <div className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
-            <div className="mb-8 sm:mb-10">
-              <div className="flex items-center gap-3">
-                <span className="h-1 w-10 rounded-full bg-blue-600" />
-
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-blue-700">
-                  Présentation
-                </p>
-              </div>
-
-              <h2 className="mt-3 text-2xl font-black tracking-[-0.035em] text-[#071936] sm:text-3xl">
-                À propos de cette formation
-              </h2>
+            <div className={styles.image}>
+              <div className={styles.imageFrame}><div><FormationPrimaryImage course={course} /></div></div>
+              <p className={styles.imageNote}><LockIcon /> Un accès personnel à votre formation</p>
             </div>
-
-            <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-12 xl:grid-cols-[minmax(0,1fr)_370px] xl:gap-16">
-              {/*
-               * ============================================================
-               * DESCRIPTION ENRICHIE
-               * ============================================================
-               */}
-
-              <article className="min-w-0">
-                <div className="overflow-hidden rounded-[1.8rem] border border-slate-200/80 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.06)]">
-                  <div className="h-1 bg-gradient-to-r from-blue-600 via-blue-400 to-transparent" />
-
-                  <div className="px-5 py-7 sm:px-8 sm:py-9 lg:px-10 lg:py-10">
-                    <FormationDescriptionRenderer
-                      course={course}
-                    />
-                  </div>
-                </div>
-              </article>
-
-              {/*
-               * ============================================================
-               * SIDEBAR
-               * ============================================================
-               */}
-
-              <aside className="min-w-0 space-y-6 lg:sticky lg:top-24">
-                <AccessCard />
-
-                <FormationSecondaryImage
-                  course={course}
-                />
-
-                <div className="relative overflow-hidden rounded-[1.6rem] border border-slate-200 bg-slate-50 p-5 sm:p-6">
-                  <div
-                    aria-hidden="true"
-                    className="absolute -right-10 -top-10 h-28 w-28 rounded-full bg-amber-100/60 blur-2xl"
-                  />
-
-                  <div className="relative">
-                    <p className="text-[9px] font-black uppercase tracking-[0.22em] text-blue-700">
-                      AfriSkill AI
-                    </p>
-
-                    <p className="mt-2 text-lg font-black leading-6 tracking-[-0.025em] text-[#071936]">
-                      Apprendre. Créer. Lancer. Monétiser.
-                    </p>
-
-                    <p className="mt-3 text-sm leading-6 text-slate-600">
-                      Votre formation et votre accès sont centralisés
-                      sur la plateforme AfriSkill AI.
-                    </p>
-                  </div>
-                </div>
-              </aside>
-            </div>
-
-            {/*
-             * ==============================================================
-             * LIVRAISON AUTOMATIQUE
-             * ==============================================================
-             */}
-
-            <div className="mt-10 sm:mt-12 lg:mt-14">
-              <AutomaticDeliverySection />
-            </div>
+            <div className={styles.pricing}><PremiumPricingCard course={course} checkoutHref={checkoutHref} /></div>
           </div>
-        </section>
-
-        {/*
-         * ==================================================================
-         * FAQ
-         * ==================================================================
-         *
-         * Le composant FAQ reste séparé de la page serveur.
-         * Toute l'interactivité de l'accordéon est contenue dans
-         * FormationFaq.tsx.
-         * ==================================================================
-         */}
-
-        <section className="relative overflow-hidden border-t border-slate-200/80 bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_100%)]">
-          <div className="mx-auto w-full max-w-7xl px-4 py-14 sm:px-6 sm:py-18 lg:px-8 lg:py-20">
-            <FormationFaq />
+        </div>
+      </section>
+      <nav aria-label="Dans cette formation" className={styles.sectionNav}><div className={styles.container}><a href="#presentation-formation">Présentation</a><a href="#acces-formation">Votre accès</a><a href="#questions-formation">Questions fréquentes</a></div></nav>
+      <section id="presentation-formation" className={styles.contentSection} aria-labelledby="presentation-title">
+        <div className={styles.container}>
+          <div className={styles.sectionHeader}><p className={styles.eyebrow}>DÉCOUVREZ VOTRE FORMATION</p><h2 id="presentation-title">Tout ce qu’il faut savoir<br />pour vous lancer.</h2><p>Le contenu et les ressources de cette formation, en détail.</p></div>
+          <div className={styles.contentGrid}>
+            <article className={styles.description}><FormationDescriptionRenderer course={course} /></article>
+            <aside className={styles.sidebar} aria-label="Informations sur l’accès à la formation"><AccessCard /><FormationSecondaryImage course={course} /></aside>
           </div>
-        </section>
-
-        {/*
-         * ==================================================================
-         * CONVERSION FINALE PREMIUM
-         * ==================================================================
-         */}
-
-        <section className="border-t border-slate-200/80 bg-[linear-gradient(180deg,#f8fafc_0%,#eef5ff_100%)]">
-          <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 sm:py-14 lg:px-8 lg:py-16">
-            <PremiumFinalOffer
-              course={course}
-            />
-          </div>
-        </section>
-      </main>
-
-      {/*
-       * ====================================================================
-       * BARRE DE COMMANDE FIXE
-       * ====================================================================
-       */}
-
-      <FormationOrderBar
-        course={course}
-        checkoutHref={checkoutHref}
-      />
-    </>
-  );
+          <div id="acces-formation" className={styles.delivery}><AutomaticDeliverySection /></div>
+        </div>
+      </section>
+      <section id="questions-formation" className={styles.faqSection} aria-label="Questions fréquentes"><div className={styles.container}><FormationFaq /></div></section>
+      <section className={styles.finalSection} aria-label="Commander cette formation"><div className={styles.container}><PremiumFinalOffer course={course} /><div className={styles.finalAction}><FormationOrderBar course={course} checkoutHref={checkoutHref} placement="inline" /></div></div></section>
+    </div>
+    <FormationOrderBar course={course} checkoutHref={checkoutHref} />
+  </>;
 }

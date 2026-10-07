@@ -1,12 +1,6 @@
 import type { Metadata } from "next";
 
-import HomeFeaturedCourses from "@/components/public/home/HomeFeaturedCourses";
-import HomeFinalCta from "@/components/public/home/HomeFinalCta";
-import HomeHero from "@/components/public/home/HomeHero";
-import HomeHowItWorks from "@/components/public/home/HomeHowItWorks";
-import HomeResults from "@/components/public/home/HomeResults";
-import HomeSkills from "@/components/public/home/HomeSkills";
-import HomeTrustBar from "@/components/public/home/HomeTrustBar";
+import HomeLanding from "@/components/public/home/HomeLanding";
 
 /**
  * ============================================================================
@@ -129,77 +123,5 @@ export const metadata: Metadata = {
  */
 
 export default function HomePage() {
-  return (
-    <div
-      className={[
-        "relative",
-        "w-full",
-        "min-w-0",
-
-        "bg-[var(--background)]",
-        "text-[var(--foreground)]",
-      ].join(" ")}
-    >
-      {/* ==================================================================
-          01 — HERO
-
-          Proposition de valeur principale.
-          ================================================================== */}
-
-      <HomeHero />
-
-      {/* ==================================================================
-          02 — POURQUOI AFRISKILL AI
-
-          Réassurance et approche pédagogique.
-          ================================================================== */}
-
-      <HomeTrustBar />
-
-      {/* ==================================================================
-          03 — FORMATIONS
-
-          Formations publiées récupérées côté serveur.
-          ================================================================== */}
-
-      <HomeFeaturedCourses />
-
-      {/* ==================================================================
-          04 — COMPÉTENCES
-
-          Présentation des principales familles de compétences.
-          ================================================================== */}
-
-      <HomeSkills />
-
-      {/* ==================================================================
-          05 — COMMENT ÇA MARCHE
-
-          Parcours :
-          formation → achat → accès au contenu.
-
-          L'id "comment-ca-marche" est défini directement dans
-          HomeHowItWorks afin de supporter les liens d'ancrage.
-          ================================================================== */}
-
-      <HomeHowItWorks />
-
-      {/* ==================================================================
-          06 — MISE EN PRATIQUE
-
-          Présentation des bénéfices pédagogiques et des domaines
-          d'application sans statistiques ni promesses non vérifiées.
-          ================================================================== */}
-
-      <HomeResults />
-
-      {/* ==================================================================
-          07 — CTA FINAL
-
-          Dernière orientation vers le catalogue.
-          ================================================================== */}
-
-      <HomeFinalCta />
-    </div>
-  );
+  return <HomeLanding />;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import styles from "./FormationSalesPage.module.css";
 
 import {
   getPublicCourseDiscountPercentage,
@@ -55,6 +56,7 @@ type FormationOrderBarProps = {
   checkoutHref?: string | null;
 
   className?: string;
+  placement?: "fixed" | "inline";
 };
 
 /**
@@ -394,6 +396,7 @@ export default function FormationOrderBar({
   course,
   checkoutHref,
   className,
+  placement = "fixed",
 }: FormationOrderBarProps) {
   /**
    * --------------------------------------------------------------------------
@@ -451,6 +454,14 @@ export default function FormationOrderBar({
     explicitCheckoutHref ??
     automaticCheckoutHref;
 
+  if (placement === "inline") {
+    return finalCheckoutHref ? (
+      <Link href={finalCheckoutHref} className={styles.orderButton} aria-label={`Commander ${course.title} pour ${formattedEffectivePrice}`}>
+        <span>Commander la formation</span><ArrowIcon />
+      </Link>
+    ) : <span className={styles.orderButton} aria-disabled="true">Commande indisponible</span>;
+  }
+
   return (
     <aside
       aria-label={`Commander la formation ${course.title}`}
@@ -462,13 +473,13 @@ export default function FormationOrderBar({
          * la navigation publique inférieure occupe déjà
          * le bas de l'écran.
          */
-        "bottom-[calc(4.75rem+env(safe-area-inset-bottom))]",
+        styles.fixedBar,
 
         /**
          * Desktop :
          * la barre repose directement en bas.
          */
-        "md:bottom-0",
+        "lg:bottom-0",
 
         className,
       )}
