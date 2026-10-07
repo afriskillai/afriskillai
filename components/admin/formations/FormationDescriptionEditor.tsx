@@ -12,12 +12,16 @@ import {
 
 import {
   EditorContent,
+  NodeViewWrapper,
+  ReactNodeViewRenderer,
+  type NodeViewProps,
   useEditor,
   type JSONContent,
 } from "@tiptap/react";
 
 import { Node as TiptapNode } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
+import { normalizeCourseVideo } from "@/lib/course-video";
 import Image from "@tiptap/extension-image";
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
@@ -106,7 +110,27 @@ const AfriSkillImage = Image.extend({
  * - l'URL originale normalisée ;
  * - le titre optionnel.
  */
+function VideoNodeView({ node }: NodeViewProps) {
+  const video = normalizeCourseVideo(node.attrs);
+  const title = typeof node.attrs.videoTitle === "string" && node.attrs.videoTitle.trim()
+    ? node.attrs.videoTitle.trim() : "Vidéo de démonstration";
+  return <NodeViewWrapper className="afriskill-description-video" contentEditable={false}>
+    {video ? <>
+      <VideoPreview url={video.videoUrl} title={title} />
+      <div className="bg-white px-4 py-3 text-sm text-slate-700">
+        <strong>{title}</strong>
+        <a href={video.videoUrl} target="_blank" rel="noopener noreferrer" className="ml-3 text-blue-700 underline">
+          Ouvrir sur {video.provider === "youtube" ? "YouTube" : "Vimeo"}
+        </a>
+      </div>
+    </> : <p className="bg-white p-4 text-sm text-red-700">Lien vidéo invalide. Modifiez cette vidéo pour ajouter un lien YouTube ou Vimeo valide.</p>}
+  </NodeViewWrapper>;
+}
+
 const AfriSkillVideo = TiptapNode.create({
+  addNodeView() {
+    return ReactNodeViewRenderer(VideoNodeView);
+  },
   name: "video",
   group: "block",
   atom: true,
@@ -1769,17 +1793,18 @@ function VideoPreview({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-sm">
-      <div className="relative aspect-video w-full">
+      <div className="relative aspect-video w-full" style={{ aspectRatio: "16 / 9" }}>
         <iframe
           src={embedUrl}
           title={title}
           className="absolute inset-0 h-full w-full border-0"
-          loading="lazy"
+          loading="eager"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen
           referrerPolicy="strict-origin-when-cross-origin"
         />
       </div>
+      <p className="bg-white px-4 py-3 text-xs text-slate-600">Si la lecture intégrée est indisponible, <a href={parsedVideo.videoUrl} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">ouvrez la vidéo sur {parsedVideo.provider === "youtube" ? "YouTube" : "Vimeo"}</a>.</p>
     </div>
   );
 }

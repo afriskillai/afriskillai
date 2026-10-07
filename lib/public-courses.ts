@@ -1,3 +1,4 @@
+import { normalizeCourseVideo } from "@/lib/course-video";
 import "server-only";
 
 import { db } from "@/lib/db";
@@ -90,6 +91,7 @@ const ALLOWED_DESCRIPTION_NODE_TYPES =
     "hardBreak",
     "horizontalRule",
     "image",
+    "video",
   ]);
 
 /**
@@ -570,6 +572,16 @@ function normalizeDescriptionNodeAttributes(
     };
   }
 
+  if (type === "video") {
+    const video = normalizeCourseVideo(attrs);
+    if (!video) return undefined;
+    return {
+      provider: video.provider,
+      videoId: video.videoId,
+      videoUrl: video.videoUrl,
+      videoTitle: typeof attrs.videoTitle === "string" ? attrs.videoTitle.trim().slice(0, 300) : null,
+    };
+  }
   if (type === "image") {
     const src =
       normalizeImageUrl(
@@ -725,6 +737,10 @@ function normalizeDescriptionNode(
     };
   }
 
+  if (type === "video") {
+    const attrs = normalizeDescriptionNodeAttributes(type, value.attrs);
+    return attrs?.provider && attrs.videoId ? { type: "video", attrs } : null;
+  }
   const attrs =
     normalizeDescriptionNodeAttributes(
       type,
