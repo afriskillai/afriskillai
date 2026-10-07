@@ -1,5 +1,4 @@
-﻿import "server-only";
-
+import "server-only";
 import {
   DeliveryStatus,
   DeliveryType,
@@ -7,7 +6,6 @@ import {
   OrderStatus,
   PaymentStatus,
 } from "@/generated/prisma/client";
-
 import { db } from "@/lib/db";
 import { courseDeliveryEmailSender } from "@/lib/course-delivery-email";
 import {
@@ -15,60 +13,12 @@ import {
   type CoursePrivateFileType,
 } from "@/lib/course-private-storage";
 
-/**
- * ============================================================================
- * AFRISKILL AI â€” LIVRAISON AUTOMATIQUE DES FORMATIONS
- * ============================================================================
- *
- * Ce service orchestre la livraison d'une formation APRÃˆS confirmation rÃ©elle
- * du paiement cÃ´tÃ© serveur.
- *
- * RÃˆGLES DE SÃ‰CURITÃ‰ :
- *
- * - aucune livraison si Payment.status !== PAID ;
- * - aucune livraison si Order.status !== PAID ;
- * - le paiement doit appartenir Ã  la commande ;
- * - le montant et la devise doivent correspondre Ã  la commande ;
- * - chaque formation doit rÃ©ellement appartenir Ã  la commande ;
- * - la quantitÃ© d'une formation doit Ãªtre Ã©gale Ã  1 ;
- * - les ressources restent dans le stockage privÃ© ;
- * - les ressources sont transmises via des URL temporaires signÃ©es ;
- * - aucune URL publique permanente n'est enregistrÃ©e ;
- * - aucune ressource privÃ©e n'est envoyÃ©e avant paiement ;
- * - Enrollment est crÃ©Ã©/rÃ©activÃ© uniquement aprÃ¨s paiement ;
- * - CourseDelivery conserve l'historique des livraisons ;
- * - les tentatives sont comptabilisÃ©es ;
- * - une livraison SENT n'est jamais renvoyÃ©e automatiquement ;
- * - une panne e-mail ne remet jamais le paiement PAID en cause ;
- * - les informations sensibles ne sont jamais journalisÃ©es ici.
- *
- * ARCHITECTURE MULTI-FICHIERS :
- *
- * - plusieurs PDF ;
- * - plusieurs documents Word ;
- * - plusieurs archives ZIP ;
- * - ordre dÃ©fini par CourseFile.position ;
- * - compatibilitÃ© avec l'ancien Course.privatePdfPath ;
- * - lien privÃ© Course.privateAccessUrl conservÃ©.
- *
- * IMPORTANT :
- *
- * Cette fonction doit Ãªtre dÃ©clenchÃ©e par le serveur aprÃ¨s confirmation
- * authentique du paiement, notamment depuis le webhook Moneroo vÃ©rifiÃ©.
- *
- * Elle ne doit jamais Ãªtre dÃ©clenchÃ©e simplement parce que le navigateur
- * arrive sur une page /paiement/succes.
- * ============================================================================
- */
+// Livraison serveur uniquement, après confirmation du paiement.
+// Les URL signées restent temporaires et ne sont jamais enregistrées en base.
 
-const MAX_ERROR_MESSAGE_LENGTH = 1_000;
-const PROCESSING_LOCK_MINUTES = 15;
+const MAX_ERROR_MESSAGE_LENGTH = 1000;
 
-/**
- * ============================================================================
- * TYPES PUBLICS
- * ============================================================================
- */
+const PROCESSING_LOCK_MS = 15 * 60 * 1_000;
 
 export type DeliverPaidOrderInput = Readonly<{
   orderId: string;
@@ -79,13 +29,7 @@ export type CourseDeliveryItemResult = Readonly<{
   courseId: string;
   courseTitle: string;
   deliveryId: string;
-
-  status:
-    | "SENT"
-    | "ALREADY_SENT"
-    | "PROCESSING"
-    | "FAILED";
-
+  status: "SENT" | "ALREADY_SENT" | "PROCESSING" | "FAILED";
   providerMessageId: string | null;
 }>;
 
@@ -96,16 +40,9 @@ export type DeliverPaidOrderResult = Readonly<{
   deliveries: CourseDeliveryItemResult[];
 }>;
 
-/**
- * ============================================================================
- * ERREUR CONTRÃ”LÃ‰E
- * ============================================================================
- */
-
 export class CourseDeliveryError extends Error {
   readonly code: string;
   readonly statusCode: number;
-
   constructor(
     code: string,
     message: string,
@@ -117,23 +54,12 @@ export class CourseDeliveryError extends Error {
     super(message, {
       cause: options?.cause,
     });
-
     this.name = "CourseDeliveryError";
     this.code = code;
     this.statusCode = statusCode;
-
-    Object.setPrototypeOf(
-      this,
-      new.target.prototype,
-    );
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
-
-/**
- * ============================================================================
- * TYPES INTERNES
- * ============================================================================
- */
 
 type CourseFileForDelivery = {
   id: string;
@@ -150,42 +76,25 @@ type PaidOrderForDelivery = {
   reference: string;
   userId: string;
   status: OrderStatus;
-
   totalAmount: number;
   currency: string;
-
   customerFirstName: string | null;
   customerLastName: string | null;
   customerEmail: string;
-
   items: Array<{
     id: string;
     courseId: string;
     courseTitle: string;
-
     unitPrice: number;
     quantity: number;
     totalAmount: number;
     currency: string;
-
     course: {
       id: string;
       title: string;
-
-      /**
-       * CompatibilitÃ© historique.
-       */
       privatePdfPath: string | null;
       privatePdfName: string | null;
-
-      /**
-       * Lien privÃ© Ã©ventuel de la formation.
-       */
       privateAccessUrl: string | null;
-
-      /**
-       * Nouvelle architecture multi-fichiers.
-       */
       files: CourseFileForDelivery[];
     };
   }>;
@@ -200,6 +109,24 @@ type PaidPaymentForDelivery = {
   currency: string;
   paidAt: Date | null;
 };
+
+type DeliveryIdentity = Readonly<{
+  orderId: string;
+  courseId: string;
+}>;
+
+type DeliveryClaimInput = DeliveryIdentity &
+  Readonly<{
+    paymentId: string;
+    recipientEmail: string;
+  }>;
+
+type EnrollmentInput = Readonly<{
+  userId: string;
+  courseId: string;
+  orderId: string;
+  paymentId: string;
+}>;
 
 type DeliveryClaimResult =
   | {
@@ -223,18 +150,8 @@ type PrivateDeliveryFile = {
   mimeType: string | null;
 };
 
-/**
- * ============================================================================
- * OUTILS
- * ============================================================================
- */
-
-function normalizeRequiredId(
-  value: string,
-  fieldName: string,
-): string {
-  const normalized = value.trim();
-
+function normalizeRequiredId(value: string, fieldName: string): string {
+  const normalized = typeof value === "string" ? value.trim() : "";
   if (!normalized) {
     throw new CourseDeliveryError(
       "INVALID_IDENTIFIER",
@@ -242,7 +159,6 @@ function normalizeRequiredId(
       400,
     );
   }
-
   if (normalized.length > 191) {
     throw new CourseDeliveryError(
       "INVALID_IDENTIFIER",
@@ -250,17 +166,11 @@ function normalizeRequiredId(
       400,
     );
   }
-
   return normalized;
 }
 
-function normalizeEmail(
-  value: string,
-): string {
-  const normalized = value
-    .trim()
-    .toLowerCase();
-
+function normalizeEmail(value: string): string {
+  const normalized = value.trim().toLowerCase();
   if (
     !normalized ||
     normalized.length > 320 ||
@@ -272,68 +182,41 @@ function normalizeEmail(
       500,
     );
   }
-
   return normalized;
 }
 
-function normalizeCurrency(
-  value: string,
-): string {
-  const normalized = value
-    .trim()
-    .toUpperCase();
-
+function normalizeCurrency(value: string): string {
+  const normalized = value.trim().toUpperCase();
   if (!/^[A-Z]{3}$/.test(normalized)) {
     throw new CourseDeliveryError(
       "INVALID_CURRENCY",
-      "La devise enregistrÃ©e est invalide.",
+      "La devise enregistrée est invalide.",
       500,
     );
   }
-
   return normalized;
 }
 
-function normalizeErrorMessage(
-  error: unknown,
-): string {
+function normalizeErrorMessage(error: unknown): string {
   const rawMessage =
     error instanceof Error
       ? error.message
       : "Erreur inconnue pendant la livraison.";
-
   const normalized = rawMessage
-    .replace(
-      /https?:\/\/[^\s"'<>]+/gi,
-      "[URL_MASQUEE]",
-    )
+    .replace(/https?:\/\/[^\s"'<>]+/gi, "[URL_MASQUEE]")
     .replace(/\s+/g, " ")
     .trim();
-
   if (!normalized) {
     return "Erreur inconnue pendant la livraison.";
   }
-
-  return normalized.slice(
-    0,
-    MAX_ERROR_MESSAGE_LENGTH,
-  );
+  return normalized.slice(0, MAX_ERROR_MESSAGE_LENGTH);
 }
 
-function isPositiveSafeInteger(
-  value: number,
-): boolean {
-  return (
-    Number.isSafeInteger(value) &&
-    value > 0
-  );
+function isPositiveSafeInteger(value: number): boolean {
+  return Number.isSafeInteger(value) && value > 0;
 }
 
-/**
- * ============================================================================
- * CHARGEMENT DE LA COMMANDE
- * ============================================================================
- */
+// Charger les données de confiance depuis la base.
 
 async function getPaidOrderForDelivery(
   orderId: string,
@@ -342,53 +225,35 @@ async function getPaidOrderForDelivery(
     where: {
       id: orderId,
     },
-
     select: {
       id: true,
       reference: true,
       userId: true,
       status: true,
-
       totalAmount: true,
       currency: true,
-
       customerFirstName: true,
       customerLastName: true,
       customerEmail: true,
-
       items: {
         orderBy: {
           createdAt: "asc",
         },
-
         select: {
           id: true,
           courseId: true,
           courseTitle: true,
-
           unitPrice: true,
           quantity: true,
           totalAmount: true,
           currency: true,
-
           course: {
             select: {
               id: true,
               title: true,
-
-              /**
-               * Ancienne architecture conservÃ©e.
-               */
               privatePdfPath: true,
               privatePdfName: true,
-
               privateAccessUrl: true,
-
-              /**
-               * Nouvelle architecture.
-               *
-               * On ne livre que les fichiers actifs.
-               */
               files: {
                 orderBy: [
                   {
@@ -398,7 +263,6 @@ async function getPaidOrderForDelivery(
                     createdAt: "asc",
                   },
                 ],
-
                 select: {
                   id: true,
                   type: true,
@@ -415,7 +279,6 @@ async function getPaidOrderForDelivery(
       },
     },
   });
-
   if (!order) {
     throw new CourseDeliveryError(
       "ORDER_NOT_FOUND",
@@ -423,15 +286,13 @@ async function getPaidOrderForDelivery(
       404,
     );
   }
-
   if (order.status !== OrderStatus.PAID) {
     throw new CourseDeliveryError(
       "ORDER_NOT_PAID",
-      "La commande n'est pas confirmÃ©e comme payÃ©e.",
+      "La commande n'est pas confirmée comme payée.",
       409,
     );
   }
-
   if (order.items.length === 0) {
     throw new CourseDeliveryError(
       "ORDER_WITHOUT_COURSE",
@@ -439,15 +300,8 @@ async function getPaidOrderForDelivery(
       409,
     );
   }
-
   return order;
 }
-
-/**
- * ============================================================================
- * CHARGEMENT DU PAIEMENT
- * ============================================================================
- */
 
 async function getPaidPaymentForDelivery(
   paymentId: string,
@@ -456,7 +310,6 @@ async function getPaidPaymentForDelivery(
     where: {
       id: paymentId,
     },
-
     select: {
       id: true,
       orderId: true,
@@ -467,7 +320,6 @@ async function getPaidPaymentForDelivery(
       paidAt: true,
     },
   });
-
   if (!payment) {
     throw new CourseDeliveryError(
       "PAYMENT_NOT_FOUND",
@@ -475,31 +327,24 @@ async function getPaidPaymentForDelivery(
       404,
     );
   }
-
   if (payment.status !== PaymentStatus.PAID) {
     throw new CourseDeliveryError(
       "PAYMENT_NOT_PAID",
-      "Le paiement n'est pas confirmÃ© comme payÃ©.",
+      "Le paiement n'est pas confirmé comme payé.",
       409,
     );
   }
-
   if (!payment.paidAt) {
     throw new CourseDeliveryError(
       "PAYMENT_WITHOUT_PAID_DATE",
-      "Le paiement est marquÃ© payÃ© sans date de confirmation.",
+      "Le paiement est marqué payé sans date de confirmation.",
       409,
     );
   }
-
   return payment;
 }
 
-/**
- * ============================================================================
- * CONTRÃ”LES PAIEMENT / COMMANDE
- * ============================================================================
- */
+// Vérifier l’appartenance du paiement, les montants et les devises.
 
 function assertPaymentMatchesOrder(
   order: PaidOrderForDelivery,
@@ -508,11 +353,10 @@ function assertPaymentMatchesOrder(
   if (payment.orderId !== order.id) {
     throw new CourseDeliveryError(
       "PAYMENT_ORDER_MISMATCH",
-      "Le paiement n'appartient pas Ã  cette commande.",
+      "Le paiement n'appartient pas à cette commande.",
       409,
     );
   }
-
   if (!isPositiveSafeInteger(order.totalAmount)) {
     throw new CourseDeliveryError(
       "INVALID_ORDER_AMOUNT",
@@ -520,7 +364,6 @@ function assertPaymentMatchesOrder(
       500,
     );
   }
-
   if (!isPositiveSafeInteger(payment.amount)) {
     throw new CourseDeliveryError(
       "INVALID_PAYMENT_AMOUNT",
@@ -528,46 +371,37 @@ function assertPaymentMatchesOrder(
       500,
     );
   }
-
   if (payment.amount !== order.totalAmount) {
     throw new CourseDeliveryError(
       "PAYMENT_AMOUNT_MISMATCH",
-      "Le montant payÃ© ne correspond pas au montant de la commande.",
+      "Le montant payé ne correspond pas au montant de la commande.",
       409,
     );
   }
-
-  const orderCurrency =
-    normalizeCurrency(order.currency);
-
-  const paymentCurrency =
-    normalizeCurrency(payment.currency);
-
+  const orderCurrency = normalizeCurrency(order.currency);
+  const paymentCurrency = normalizeCurrency(payment.currency);
   if (paymentCurrency !== orderCurrency) {
     throw new CourseDeliveryError(
       "PAYMENT_CURRENCY_MISMATCH",
-      "La devise du paiement ne correspond pas Ã  celle de la commande.",
+      "La devise du paiement ne correspond pas à celle de la commande.",
       409,
     );
   }
-
   for (const item of order.items) {
     if (item.course.id !== item.courseId) {
       throw new CourseDeliveryError(
         "COURSE_ORDER_MISMATCH",
-        "Une formation de la commande est incohÃ©rente.",
+        "Une formation de la commande est incohérente.",
         500,
       );
     }
-
     if (item.quantity !== 1) {
       throw new CourseDeliveryError(
         "INVALID_COURSE_QUANTITY",
-        "La quantitÃ© d'une formation doit Ãªtre Ã©gale Ã  1.",
+        "La quantité d'une formation doit être égale à 1.",
         409,
       );
     }
-
     if (!isPositiveSafeInteger(item.unitPrice)) {
       throw new CourseDeliveryError(
         "INVALID_ORDER_ITEM_UNIT_PRICE",
@@ -575,7 +409,6 @@ function assertPaymentMatchesOrder(
         500,
       );
     }
-
     if (!isPositiveSafeInteger(item.totalAmount)) {
       throw new CourseDeliveryError(
         "INVALID_ORDER_ITEM_AMOUNT",
@@ -583,188 +416,97 @@ function assertPaymentMatchesOrder(
         500,
       );
     }
-
     if (item.totalAmount !== item.unitPrice) {
       throw new CourseDeliveryError(
         "INVALID_ORDER_ITEM_AMOUNT",
-        "Le montant d'une formation dans la commande est incohÃ©rent.",
+        "Le montant d'une formation dans la commande est incohérent.",
         409,
       );
     }
-
-    if (
-      normalizeCurrency(item.currency) !==
-      orderCurrency
-    ) {
+    if (normalizeCurrency(item.currency) !== orderCurrency) {
       throw new CourseDeliveryError(
         "ORDER_ITEM_CURRENCY_MISMATCH",
-        "La devise d'une formation ne correspond pas Ã  celle de la commande.",
+        "La devise d'une formation ne correspond pas à celle de la commande.",
         409,
       );
     }
   }
-
-  const computedTotal =
-    order.items.reduce(
-      (total, item) =>
-        total + item.totalAmount,
-      0,
-    );
-
+  const computedTotal = order.items.reduce(
+    (total, item) => total + item.totalAmount,
+    0,
+  );
   if (!isPositiveSafeInteger(computedTotal)) {
     throw new CourseDeliveryError(
       "INVALID_COMPUTED_TOTAL",
-      "Le total calculÃ© de la commande est invalide.",
+      "Le total calculé de la commande est invalide.",
       500,
     );
   }
-
   if (computedTotal !== order.totalAmount) {
     throw new CourseDeliveryError(
       "ORDER_TOTAL_MISMATCH",
-      "Le total de la commande ne correspond pas aux formations achetÃ©es.",
+      "Le total de la commande ne correspond pas aux formations achetées.",
       409,
     );
   }
 }
 
-/**
- * ============================================================================
- * ENROLLMENT
- * ============================================================================
- */
+// Conserver la commande d’origine d’un accès existant. Un nouvel achat peut
 
-async function ensureEnrollment(
-  input: Readonly<{
-    userId: string;
-    courseId: string;
-    orderId: string;
-    paymentId: string;
-  }>,
+// réactiver cet accès et compléter son paiement s’il était absent.
+
+async function activateExistingEnrollment(
+  enrollment: {
+    id: string;
+    status: EnrollmentStatus;
+    paymentId: string | null;
+  },
+  paymentId: string,
 ): Promise<void> {
-  const existing =
-    await db.enrollment.findUnique({
-      where: {
-        userId_courseId: {
-          userId: input.userId,
-          courseId: input.courseId,
-        },
-      },
+  if (enrollment.status === EnrollmentStatus.ACTIVE && enrollment.paymentId)
+    return;
 
-      select: {
-        id: true,
-        status: true,
-        orderId: true,
-        paymentId: true,
-      },
-    });
+  await db.enrollment.update({
+    where: { id: enrollment.id },
+    data: {
+      status: EnrollmentStatus.ACTIVE,
+      paymentId: enrollment.paymentId ?? paymentId,
+    },
+  });
+}
 
-  if (!existing) {
-    try {
-      await db.enrollment.create({
-        data: {
-          userId: input.userId,
-          courseId: input.courseId,
-          orderId: input.orderId,
-          paymentId: input.paymentId,
-          status: EnrollmentStatus.ACTIVE,
-        },
-      });
+async function ensureEnrollment(input: EnrollmentInput): Promise<void> {
+  const where = {
+    userId_courseId: { userId: input.userId, courseId: input.courseId },
+  };
+  const select = { id: true, status: true, paymentId: true } as const;
+  const existing = await db.enrollment.findUnique({ where, select });
 
-      return;
-    } catch (error) {
-      /**
-       * Une exÃ©cution concurrente peut avoir crÃ©Ã© l'Enrollment
-       * entre le findUnique et le create.
-       */
-      const concurrentlyCreated =
-        await db.enrollment.findUnique({
-          where: {
-            userId_courseId: {
-              userId: input.userId,
-              courseId: input.courseId,
-            },
-          },
-
-          select: {
-            id: true,
-            status: true,
-            paymentId: true,
-          },
-        });
-
-      if (!concurrentlyCreated) {
-        throw new CourseDeliveryError(
-          "ENROLLMENT_CREATION_FAILED",
-          "Impossible d'activer l'accÃ¨s Ã  la formation.",
-          500,
-          {
-            cause: error,
-          },
-        );
-      }
-
-      if (
-        concurrentlyCreated.status !==
-          EnrollmentStatus.ACTIVE ||
-        !concurrentlyCreated.paymentId
-      ) {
-        await db.enrollment.update({
-          where: {
-            id: concurrentlyCreated.id,
-          },
-
-          data: {
-            status: EnrollmentStatus.ACTIVE,
-
-            paymentId:
-              concurrentlyCreated.paymentId ??
-              input.paymentId,
-          },
-        });
-      }
-
-      return;
-    }
+  if (existing) {
+    await activateExistingEnrollment(existing, input.paymentId);
+    return;
   }
 
-  /**
-   * On ne modifie pas orderId d'un Enrollment existant.
-   *
-   * L'utilisateur possÃ¨de dÃ©jÃ  cette formation.
-   */
-  if (
-    existing.status !== EnrollmentStatus.ACTIVE ||
-    !existing.paymentId
-  ) {
-    await db.enrollment.update({
-      where: {
-        id: existing.id,
-      },
-
-      data: {
-        status: EnrollmentStatus.ACTIVE,
-
-        paymentId:
-          existing.paymentId ??
-          input.paymentId,
-      },
+  try {
+    await db.enrollment.create({
+      data: { ...input, status: EnrollmentStatus.ACTIVE },
     });
+  } catch (error) {
+    // Une autre exécution a pu créer l’accès entre la lecture et l’insertion.
+    const concurrent = await db.enrollment.findUnique({ where, select });
+    if (!concurrent) {
+      throw new CourseDeliveryError(
+        "ENROLLMENT_CREATION_FAILED",
+        "Impossible d’activer l’accès à la formation.",
+        500,
+        { cause: error },
+      );
+    }
+    await activateExistingEnrollment(concurrent, input.paymentId);
   }
 }
 
-/**
- * ============================================================================
- * LIVRAISON â€” LECTURE
- * ============================================================================
- */
-
-async function findExistingSentDelivery(
-  input: Readonly<{
-    orderId: string;
-    courseId: string;
-  }>,
-) {
+async function findExistingSentDelivery(input: DeliveryIdentity) {
   return db.courseDelivery.findFirst({
     where: {
       orderId: input.orderId,
@@ -772,11 +514,9 @@ async function findExistingSentDelivery(
       type: DeliveryType.PURCHASE_EMAIL,
       status: DeliveryStatus.SENT,
     },
-
     orderBy: {
       sentAt: "desc",
     },
-
     select: {
       id: true,
       providerMessageId: true,
@@ -784,18 +524,12 @@ async function findExistingSentDelivery(
   });
 }
 
-async function findReusableDelivery(
-  input: Readonly<{
-    orderId: string;
-    courseId: string;
-  }>,
-) {
+async function findReusableDelivery(input: DeliveryIdentity) {
   return db.courseDelivery.findFirst({
     where: {
       orderId: input.orderId,
       courseId: input.courseId,
       type: DeliveryType.PURCHASE_EMAIL,
-
       status: {
         in: [
           DeliveryStatus.PENDING,
@@ -804,11 +538,9 @@ async function findReusableDelivery(
         ],
       },
     },
-
     orderBy: {
       createdAt: "asc",
     },
-
     select: {
       id: true,
       status: true,
@@ -817,36 +549,16 @@ async function findReusableDelivery(
   });
 }
 
-/**
- * ============================================================================
- * LIVRAISON â€” CRÃ‰ATION
- * ============================================================================
- */
-
-async function createPendingDelivery(
-  input: Readonly<{
-    orderId: string;
-    courseId: string;
-    paymentId: string;
-    recipientEmail: string;
-  }>,
-) {
+async function createPendingDelivery(input: DeliveryClaimInput) {
   return db.courseDelivery.create({
     data: {
       orderId: input.orderId,
       courseId: input.courseId,
       paymentId: input.paymentId,
-
-      recipientEmail:
-        input.recipientEmail,
-
-      type:
-        DeliveryType.PURCHASE_EMAIL,
-
-      status:
-        DeliveryStatus.PENDING,
+      recipientEmail: input.recipientEmail,
+      type: DeliveryType.PURCHASE_EMAIL,
+      status: DeliveryStatus.PENDING,
     },
-
     select: {
       id: true,
       status: true,
@@ -855,119 +567,75 @@ async function createPendingDelivery(
   });
 }
 
-/**
- * ============================================================================
- * VERROU DE LIVRAISON
- * ============================================================================
- */
+// Réutiliser les tentatives et verrouiller leur traitement par mise à jour conditionnelle.
 
 async function claimDelivery(
-  input: Readonly<{
-    orderId: string;
-    courseId: string;
-    paymentId: string;
-    recipientEmail: string;
-  }>,
+  input: DeliveryClaimInput,
 ): Promise<DeliveryClaimResult> {
-  const alreadySent =
-    await findExistingSentDelivery({
-      orderId: input.orderId,
-      courseId: input.courseId,
-    });
-
+  const alreadySent = await findExistingSentDelivery({
+    orderId: input.orderId,
+    courseId: input.courseId,
+  });
   if (alreadySent) {
     return {
       kind: "ALREADY_SENT",
       deliveryId: alreadySent.id,
-      providerMessageId:
-        alreadySent.providerMessageId,
+      providerMessageId: alreadySent.providerMessageId,
     };
   }
-
-  let delivery =
-    await findReusableDelivery({
-      orderId: input.orderId,
-      courseId: input.courseId,
-    });
-
+  let delivery = await findReusableDelivery({
+    orderId: input.orderId,
+    courseId: input.courseId,
+  });
   if (!delivery) {
     try {
-      delivery =
-        await createPendingDelivery({
-          orderId: input.orderId,
-          courseId: input.courseId,
-          paymentId: input.paymentId,
-          recipientEmail:
-            input.recipientEmail,
-        });
+      delivery = await createPendingDelivery({
+        orderId: input.orderId,
+        courseId: input.courseId,
+        paymentId: input.paymentId,
+        recipientEmail: input.recipientEmail,
+      });
     } catch (error) {
-      const sentAfterRace =
-        await findExistingSentDelivery({
-          orderId: input.orderId,
-          courseId: input.courseId,
-        });
-
+      const sentAfterRace = await findExistingSentDelivery({
+        orderId: input.orderId,
+        courseId: input.courseId,
+      });
       if (sentAfterRace) {
         return {
           kind: "ALREADY_SENT",
           deliveryId: sentAfterRace.id,
-          providerMessageId:
-            sentAfterRace.providerMessageId,
+          providerMessageId: sentAfterRace.providerMessageId,
         };
       }
-
-      const concurrentDelivery =
-        await findReusableDelivery({
-          orderId: input.orderId,
-          courseId: input.courseId,
-        });
-
+      const concurrentDelivery = await findReusableDelivery({
+        orderId: input.orderId,
+        courseId: input.courseId,
+      });
       if (!concurrentDelivery) {
         throw new CourseDeliveryError(
           "DELIVERY_CREATION_FAILED",
-          "Impossible de prÃ©parer la livraison de la formation.",
+          "Impossible de préparer la livraison de la formation.",
           500,
           {
             cause: error,
           },
         );
       }
-
       delivery = concurrentDelivery;
     }
   }
-
-  if (
-    delivery.status ===
-    DeliveryStatus.PROCESSING
-  ) {
-    const staleBefore =
-      new Date(
-        Date.now() -
-          PROCESSING_LOCK_MINUTES *
-            60 *
-            1_000,
-      );
-
-    if (
-      delivery.lastAttemptAt &&
-      delivery.lastAttemptAt > staleBefore
-    ) {
+  if (delivery.status === DeliveryStatus.PROCESSING) {
+    const staleBefore = new Date(Date.now() - PROCESSING_LOCK_MS);
+    if (delivery.lastAttemptAt && delivery.lastAttemptAt > staleBefore) {
       return {
         kind: "PROCESSING",
         deliveryId: delivery.id,
       };
     }
-
-    /**
-     * PROCESSING trop ancien :
-     * une ancienne exÃ©cution a probablement Ã©tÃ© interrompue.
-     */
     await db.courseDelivery.updateMany({
       where: {
         id: delivery.id,
         status: DeliveryStatus.PROCESSING,
-
         OR: [
           {
             lastAttemptAt: null,
@@ -979,95 +647,60 @@ async function claimDelivery(
           },
         ],
       },
-
       data: {
         status: DeliveryStatus.FAILED,
         errorMessage:
-          "Une tentative prÃ©cÃ©dente de livraison a Ã©tÃ© interrompue.",
+          "Une tentative précédente de livraison a été interrompue.",
       },
     });
   }
-
-  const claimed =
-    await db.courseDelivery.updateMany({
-      where: {
-        id: delivery.id,
-
-        status: {
-          in: [
-            DeliveryStatus.PENDING,
-            DeliveryStatus.FAILED,
-          ],
-        },
+  const claimed = await db.courseDelivery.updateMany({
+    where: {
+      id: delivery.id,
+      status: {
+        in: [DeliveryStatus.PENDING, DeliveryStatus.FAILED],
       },
-
-      data: {
-        status:
-          DeliveryStatus.PROCESSING,
-
-        paymentId:
-          input.paymentId,
-
-        recipientEmail:
-          input.recipientEmail,
-
-        attempts: {
-          increment: 1,
-        },
-
-        lastAttemptAt:
-          new Date(),
-
-        errorMessage:
-          null,
+    },
+    data: {
+      status: DeliveryStatus.PROCESSING,
+      paymentId: input.paymentId,
+      recipientEmail: input.recipientEmail,
+      attempts: {
+        increment: 1,
       },
-    });
-
+      lastAttemptAt: new Date(),
+      errorMessage: null,
+    },
+  });
   if (claimed.count === 1) {
     return {
       kind: "CLAIMED",
       deliveryId: delivery.id,
     };
   }
-
-  /**
-   * Une autre exÃ©cution a pu prendre le verrou juste avant nous.
-   */
-  const current =
-    await db.courseDelivery.findUnique({
-      where: {
-        id: delivery.id,
-      },
-
-      select: {
-        id: true,
-        status: true,
-        providerMessageId: true,
-      },
-    });
-
-  if (
-    current?.status ===
-    DeliveryStatus.SENT
-  ) {
+  const current = await db.courseDelivery.findUnique({
+    where: {
+      id: delivery.id,
+    },
+    select: {
+      id: true,
+      status: true,
+      providerMessageId: true,
+    },
+  });
+  if (current?.status === DeliveryStatus.SENT) {
     return {
       kind: "ALREADY_SENT",
       deliveryId: current.id,
-      providerMessageId:
-        current.providerMessageId,
+      providerMessageId: current.providerMessageId,
     };
   }
-
-  if (
-    current?.status ===
-    DeliveryStatus.PROCESSING
-  ) {
+  if (current?.status === DeliveryStatus.PROCESSING) {
     return {
       kind: "PROCESSING",
       deliveryId: current.id,
     };
   }
-
   throw new CourseDeliveryError(
     "DELIVERY_CLAIM_FAILED",
     "Impossible de verrouiller la livraison de la formation.",
@@ -1075,40 +708,26 @@ async function claimDelivery(
   );
 }
 
-/**
- * ============================================================================
- * RESSOURCES PRIVÃ‰ES MULTI-FICHIERS
- * ============================================================================
- */
+// Les fichiers CourseFile sont prioritaires ; le PDF historique sert de repli.
 
 async function createPrivateFileAttachments(
   input: Readonly<{
     courseTitle: string;
     files: CourseFileForDelivery[];
-
-    /**
-     * Ancien PDF conservÃ© pour les formations crÃ©Ã©es avant
-     * l'introduction de CourseFile.
-     */
     legacyPrivatePdfPath: string | null;
     legacyPrivatePdfName: string | null;
   }>,
 ): Promise<PrivateDeliveryFile[]> {
-  /**
-   * Nouvelle architecture prioritaire.
-   */
   if (input.files.length > 0) {
     try {
-      const accesses =
-        await coursePrivateFileAccess.createSignedFileUrls(
-          input.files.map((file) => ({
-            path: file.path,
-            filename: file.name,
-            type: file.type,
-            mimeType: file.mimeType,
-          })),
-        );
-
+      const accesses = await coursePrivateFileAccess.createSignedFileUrls(
+        input.files.map((file) => ({
+          path: file.path,
+          filename: file.name,
+          type: file.type,
+          mimeType: file.mimeType,
+        })),
+      );
       return accesses.map((access) => ({
         filename: access.filename,
         url: access.url,
@@ -1118,7 +737,7 @@ async function createPrivateFileAttachments(
     } catch (error) {
       throw new CourseDeliveryError(
         "PRIVATE_FILES_ACCESS_FAILED",
-        "Impossible de prÃ©parer l'accÃ¨s sÃ©curisÃ© aux fichiers de la formation.",
+        "Impossible de préparer l'accès sécurisé aux fichiers de la formation.",
         500,
         {
           cause: error,
@@ -1126,49 +745,28 @@ async function createPrivateFileAttachments(
       );
     }
   }
-
-  /**
-   * CompatibilitÃ© historique :
-   *
-   * si aucun CourseFile n'existe encore, on utilise privatePdfPath.
-   */
-  const legacyPrivatePdfPath =
-    input.legacyPrivatePdfPath?.trim();
-
+  const legacyPrivatePdfPath = input.legacyPrivatePdfPath?.trim();
   if (!legacyPrivatePdfPath) {
     return [];
   }
-
   try {
-    const pdfAccess =
-      await coursePrivateFileAccess.createSignedPdfUrl({
-        privatePdfPath:
-          legacyPrivatePdfPath,
-
-        filename:
-          input.legacyPrivatePdfName?.trim() ||
-          `${input.courseTitle}.pdf`,
-      });
-
+    const pdfAccess = await coursePrivateFileAccess.createSignedPdfUrl({
+      privatePdfPath: legacyPrivatePdfPath,
+      filename:
+        input.legacyPrivatePdfName?.trim() || `${input.courseTitle}.pdf`,
+    });
     return [
       {
-        filename:
-          pdfAccess.filename,
-
-        url:
-          pdfAccess.url,
-
-        type:
-          "PDF",
-
-        mimeType:
-          "application/pdf",
+        filename: pdfAccess.filename,
+        url: pdfAccess.url,
+        type: "PDF",
+        mimeType: "application/pdf",
       },
     ];
   } catch (error) {
     throw new CourseDeliveryError(
       "PRIVATE_PDF_ACCESS_FAILED",
-      "Impossible de prÃ©parer l'accÃ¨s sÃ©curisÃ© au PDF historique de la formation.",
+      "Impossible de préparer l'accès sécurisé au PDF historique de la formation.",
       500,
       {
         cause: error,
@@ -1177,86 +775,68 @@ async function createPrivateFileAttachments(
   }
 }
 
-/**
- * ============================================================================
- * LIEN PRIVÃ‰ DE FORMATION
- * ============================================================================
- */
-
-function normalizePrivateAccessUrl(
-  value: string | null,
-): string | null {
-  const normalized =
-    value?.trim();
-
+function normalizePrivateAccessUrl(value: string | null): string | null {
+  const normalized = value?.trim();
   if (!normalized) {
     return null;
   }
-
   let url: URL;
-
   try {
     url = new URL(normalized);
   } catch {
     throw new CourseDeliveryError(
       "INVALID_PRIVATE_ACCESS_URL",
-      "Le lien privÃ© de la formation est invalide.",
+      "Le lien privé de la formation est invalide.",
       500,
     );
   }
-
   if (url.protocol !== "https:") {
     throw new CourseDeliveryError(
       "INVALID_PRIVATE_ACCESS_URL",
-      "Le lien privÃ© de la formation doit utiliser HTTPS.",
+      "Le lien privé de la formation doit utiliser HTTPS.",
       500,
     );
   }
-
   return url.toString();
 }
-
-/**
- * ============================================================================
- * MARQUAGE FAILED
- * ============================================================================
- */
 
 async function markDeliveryFailed(
   deliveryId: string,
   error: unknown,
 ): Promise<void> {
-  const errorMessage =
-    normalizeErrorMessage(error);
-
+  const errorMessage = normalizeErrorMessage(error);
   try {
     await db.courseDelivery.updateMany({
       where: {
         id: deliveryId,
-        status:
-          DeliveryStatus.PROCESSING,
+        status: DeliveryStatus.PROCESSING,
       },
-
       data: {
-        status:
-          DeliveryStatus.FAILED,
-
+        status: DeliveryStatus.FAILED,
         errorMessage,
       },
     });
   } catch {
-    /**
-     * Ne jamais masquer l'erreur originale parce que la mise Ã  jour
-     * du statut de livraison a elle-mÃªme Ã©chouÃ©.
-     */
+    // Préserver l’erreur de livraison si la mise à jour échoue également.
   }
 }
 
-/**
- * ============================================================================
- * LIVRAISON D'UNE FORMATION
- * ============================================================================
- */
+function buildDeliveryResult(
+  item: PaidOrderForDelivery["items"][number],
+  deliveryId: string,
+  status: CourseDeliveryItemResult["status"],
+  providerMessageId: string | null = null,
+): CourseDeliveryItemResult {
+  return {
+    courseId: item.courseId,
+    courseTitle: item.courseTitle,
+    deliveryId,
+    status,
+    providerMessageId,
+  };
+}
+
+// Une panne de stockage ou d’e-mail ne doit pas annuler un paiement confirmé.
 
 async function deliverCourse(
   input: Readonly<{
@@ -1266,448 +846,179 @@ async function deliverCourse(
     recipientEmail: string;
   }>,
 ): Promise<CourseDeliveryItemResult> {
-  const {
-    order,
-    payment,
-    item,
-    recipientEmail,
-  } = input;
-
-  /**
-   * L'accÃ¨s applicatif est crÃ©Ã© uniquement aprÃ¨s :
-   *
-   * - Order PAID ;
-   * - Payment PAID ;
-   * - contrÃ´le montant ;
-   * - contrÃ´le devise ;
-   * - contrÃ´le d'appartenance du paiement ;
-   * - contrÃ´le de la formation.
-   */
+  const { order, payment, item, recipientEmail } = input;
   await ensureEnrollment({
     userId: order.userId,
     courseId: item.courseId,
     orderId: order.id,
     paymentId: payment.id,
   });
-
-  const claim =
-    await claimDelivery({
-      orderId: order.id,
-      courseId: item.courseId,
-      paymentId: payment.id,
-      recipientEmail,
-    });
-
-  if (
-    claim.kind ===
-    "ALREADY_SENT"
-  ) {
-    return {
-      courseId:
-        item.courseId,
-
-      courseTitle:
-        item.courseTitle,
-
-      deliveryId:
-        claim.deliveryId,
-
-      status:
-        "ALREADY_SENT",
-
-      providerMessageId:
-        claim.providerMessageId,
-    };
+  const claim = await claimDelivery({
+    orderId: order.id,
+    courseId: item.courseId,
+    paymentId: payment.id,
+    recipientEmail,
+  });
+  if (claim.kind === "ALREADY_SENT") {
+    return buildDeliveryResult(
+      item,
+      claim.deliveryId,
+      "ALREADY_SENT",
+      claim.providerMessageId,
+    );
   }
-
-  if (
-    claim.kind ===
-    "PROCESSING"
-  ) {
-    return {
-      courseId:
-        item.courseId,
-
-      courseTitle:
-        item.courseTitle,
-
-      deliveryId:
-        claim.deliveryId,
-
-      status:
-        "PROCESSING",
-
-      providerMessageId:
-        null,
-    };
+  if (claim.kind === "PROCESSING") {
+    return buildDeliveryResult(item, claim.deliveryId, "PROCESSING");
   }
-
-  const deliveryId =
-    claim.deliveryId;
-
+  const deliveryId = claim.deliveryId;
   try {
-    /**
-     * Les URL signÃ©es sont gÃ©nÃ©rÃ©es seulement APRÃˆS :
-     *
-     * - validation du paiement ;
-     * - validation de la commande ;
-     * - activation Enrollment ;
-     * - acquisition du verrou de livraison.
-     *
-     * Elles ne sont jamais enregistrÃ©es en base.
-     */
-    const files =
-      await createPrivateFileAttachments({
-        courseTitle:
-          item.courseTitle,
-
-        files:
-          item.course.files,
-
-        legacyPrivatePdfPath:
-          item.course.privatePdfPath,
-
-        legacyPrivatePdfName:
-          item.course.privatePdfName,
-      });
-
-    const privateAccessUrl =
-      normalizePrivateAccessUrl(
-        item.course.privateAccessUrl,
-      );
-
-    if (
-      files.length === 0 &&
-      !privateAccessUrl
-    ) {
+    const files = await createPrivateFileAttachments({
+      courseTitle: item.courseTitle,
+      files: item.course.files,
+      legacyPrivatePdfPath: item.course.privatePdfPath,
+      legacyPrivatePdfName: item.course.privatePdfName,
+    });
+    const privateAccessUrl = normalizePrivateAccessUrl(
+      item.course.privateAccessUrl,
+    );
+    if (files.length === 0 && !privateAccessUrl) {
       throw new CourseDeliveryError(
         "COURSE_HAS_NO_PRIVATE_CONTENT",
-        `La formation "${item.courseTitle}" ne contient aucun fichier privÃ© ni lien privÃ© Ã  livrer.`,
+        `La formation "${item.courseTitle}" ne contient aucun fichier privé ni lien privé à livrer.`,
         409,
       );
     }
-
-    /**
-     * ------------------------------------------------------------------------
-     * COMPATIBILITÃ‰ E-MAIL
-     * ------------------------------------------------------------------------
-     *
-     * `files` reprÃ©sente dÃ©sormais toutes les ressources privÃ©es.
-     *
-     * `pdf` reste Ã©galement fourni lorsque cela est possible afin de
-     * conserver la compatibilitÃ© avec l'ancien contrat de
-     * lib/course-delivery-email.ts pendant la migration.
-     */
-
-    const firstPdf =
-      files.find(
-        (file) =>
-          file.type === "PDF",
-      ) ?? null;
-
-    const emailResult =
-      await courseDeliveryEmailSender.sendCourseDeliveryEmail({
+    const firstPdf = files.find((file) => file.type === "PDF") ?? null;
+    const emailResult = await courseDeliveryEmailSender.sendCourseDeliveryEmail(
+      {
         recipientEmail,
-
-        customerFirstName:
-          order.customerFirstName,
-
-        customerLastName:
-          order.customerLastName,
-
-        orderReference:
-          order.reference,
-
-        courseTitle:
-          item.courseTitle,
-
+        customerFirstName: order.customerFirstName,
+        customerLastName: order.customerLastName,
+        orderReference: order.reference,
+        courseTitle: item.courseTitle,
         privateAccessUrl,
-
-        /**
-         * Ancien contrat.
-         */
-        pdf:
-          firstPdf
-            ? {
-                filename:
-                  firstPdf.filename,
-
-                url:
-                  firstPdf.url,
-              }
-            : null,
-
-        /**
-         * Nouveau contrat multi-fichiers.
-         *
-         * Le prochain fichier mis Ã  jour sera
-         * lib/course-delivery-email.ts.
-         */
+        pdf: firstPdf
+          ? {
+              filename: firstPdf.filename,
+              url: firstPdf.url,
+            }
+          : null,
         files,
-      });
-
-    const providerMessageId =
-      emailResult.providerMessageId
-        ?.trim() || null;
-
-    /**
-     * SENT n'est enregistrÃ© qu'aprÃ¨s rÃ©ussite effective de Resend.
-     */
-    const markedSent =
-      await db.courseDelivery.updateMany({
-        where: {
-          id: deliveryId,
-          status:
-            DeliveryStatus.PROCESSING,
-        },
-
-        data: {
-          status:
-            DeliveryStatus.SENT,
-
-          providerMessageId,
-
-          sentAt:
-            new Date(),
-
-          errorMessage:
-            null,
-        },
-      });
-
+      },
+    );
+    const providerMessageId = emailResult.providerMessageId?.trim() || null;
+    const markedSent = await db.courseDelivery.updateMany({
+      where: {
+        id: deliveryId,
+        status: DeliveryStatus.PROCESSING,
+      },
+      data: {
+        status: DeliveryStatus.SENT,
+        providerMessageId,
+        sentAt: new Date(),
+        errorMessage: null,
+      },
+    });
     if (markedSent.count !== 1) {
       throw new CourseDeliveryError(
         "DELIVERY_FINALIZATION_FAILED",
-        "L'e-mail a Ã©tÃ© envoyÃ© mais son statut de livraison n'a pas pu Ãªtre finalisÃ© correctement.",
+        "L'e-mail a été envoyé mais son statut de livraison n'a pas pu être finalisé correctement.",
         500,
       );
     }
-
-    return {
-      courseId:
-        item.courseId,
-
-      courseTitle:
-        item.courseTitle,
-
-      deliveryId,
-
-      status:
-        "SENT",
-
-      providerMessageId,
-    };
+    return buildDeliveryResult(item, deliveryId, "SENT", providerMessageId);
   } catch (error) {
-    /**
-     * IMPORTANT :
-     *
-     * Payment reste PAID.
-     * Order reste PAID.
-     * Enrollment reste actif.
-     *
-     * Une panne Resend/Supabase ne doit jamais annuler
-     * un paiement rÃ©ellement confirmÃ©.
-     */
-    await markDeliveryFailed(
-      deliveryId,
-      error,
-    );
-
-    return {
-      courseId:
-        item.courseId,
-
-      courseTitle:
-        item.courseTitle,
-
-      deliveryId,
-
-      status:
-        "FAILED",
-
-      providerMessageId:
-        null,
-    };
+    await markDeliveryFailed(deliveryId, error);
+    return buildDeliveryResult(item, deliveryId, "FAILED");
   }
 }
 
-/**
- * ============================================================================
- * LIVRAISON PRINCIPALE
- * ============================================================================
- */
+/** Livrer une commande payée. À appeler depuis le serveur après vérification du paiement. */
 
 export async function deliverPaidOrder(
   input: DeliverPaidOrderInput,
 ): Promise<DeliverPaidOrderResult> {
-  const orderId =
-    normalizeRequiredId(
-      input.orderId,
-      "L'identifiant de la commande",
-    );
-
-  const paymentId =
-    normalizeRequiredId(
-      input.paymentId,
-      "L'identifiant du paiement",
-    );
-
-  /**
-   * On recharge toujours les donnÃ©es depuis PostgreSQL.
-   *
-   * Aucune donnÃ©e critique provenant du navigateur ou du webhook brut
-   * n'est utilisÃ©e comme source de vÃ©ritÃ©.
-   */
-  const [
-    order,
-    payment,
-  ] = await Promise.all([
-    getPaidOrderForDelivery(
-      orderId,
-    ),
-
-    getPaidPaymentForDelivery(
-      paymentId,
-    ),
-  ]);
-
-  assertPaymentMatchesOrder(
-    order,
-    payment,
+  const orderId = normalizeRequiredId(
+    input.orderId,
+    "L'identifiant de la commande",
   );
-
-  const recipientEmail =
-    normalizeEmail(
-      order.customerEmail,
-    );
-
-  const deliveries:
-    CourseDeliveryItemResult[] = [];
-
-  /**
-   * Traitement sÃ©quentiel volontaire.
-   *
-   * Cela simplifie :
-   *
-   * - l'idempotence ;
-   * - le suivi des tentatives ;
-   * - la traÃ§abilitÃ© ;
-   * - la protection contre plusieurs appels externes simultanÃ©s.
-   */
+  const paymentId = normalizeRequiredId(
+    input.paymentId,
+    "L'identifiant du paiement",
+  );
+  const [order, payment] = await Promise.all([
+    getPaidOrderForDelivery(orderId),
+    getPaidPaymentForDelivery(paymentId),
+  ]);
+  assertPaymentMatchesOrder(order, payment);
+  const recipientEmail = normalizeEmail(order.customerEmail);
+  const deliveries: CourseDeliveryItemResult[] = [];
   for (const item of order.items) {
-    const result =
-      await deliverCourse({
-        order,
-        payment,
-        item,
-        recipientEmail,
-      });
-
-    deliveries.push(
-      result,
-    );
+    const result = await deliverCourse({
+      order,
+      payment,
+      item,
+      recipientEmail,
+    });
+    deliveries.push(result);
   }
-
   return {
-    orderId:
-      order.id,
-
-    orderReference:
-      order.reference,
-
-    paymentId:
-      payment.id,
-
+    orderId: order.id,
+    orderReference: order.reference,
+    paymentId: payment.id,
     deliveries,
   };
 }
 
-/**
- * ============================================================================
- * RELANCE D'UNE LIVRAISON
- * ============================================================================
- *
- * Une relance repasse obligatoirement par les mÃªmes contrÃ´les :
- *
- * - Order PAID ;
- * - Payment PAID ;
- * - paiement appartenant Ã  la commande ;
- * - montant identique ;
- * - devise identique ;
- * - formation appartenant Ã  la commande.
- *
- * Une livraison SENT n'est jamais renvoyÃ©e automatiquement.
- * Une livraison FAILED peut Ãªtre reprise.
- * ============================================================================
- */
+/** Relancer en appliquant les mêmes contrôles ; une livraison SENT est ignorée. */
 
 export async function retryPaidOrderDelivery(
   input: DeliverPaidOrderInput,
 ): Promise<DeliverPaidOrderResult> {
-  return deliverPaidOrder(
-    input,
-  );
+  return deliverPaidOrder(input);
 }
 
-/**
- * ============================================================================
- * LECTURE DU STATUT DE LIVRAISON
- * ============================================================================
- */
+/** Lire l’historique. Le point d’entrée appelant doit contrôler l’autorisation. */
 
-export async function getOrderDeliveryStatus(
-  orderIdInput: string,
-) {
-  const orderId =
-    normalizeRequiredId(
-      orderIdInput,
-      "L'identifiant de la commande",
-    );
-
-  const order =
-    await db.order.findUnique({
-      where: {
-        id: orderId,
-      },
-
-      select: {
-        id: true,
-        reference: true,
-        status: true,
-
-        deliveries: {
-          orderBy: {
-            createdAt: "asc",
-          },
-
-          select: {
-            id: true,
-            courseId: true,
-            paymentId: true,
-            recipientEmail: true,
-
-            type: true,
-            status: true,
-
-            attempts: true,
-            lastAttemptAt: true,
-            sentAt: true,
-
-            providerMessageId: true,
-
-            createdAt: true,
-            updatedAt: true,
-
-            course: {
-              select: {
-                title: true,
-              },
+export async function getOrderDeliveryStatus(orderIdInput: string) {
+  const orderId = normalizeRequiredId(
+    orderIdInput,
+    "L'identifiant de la commande",
+  );
+  const order = await db.order.findUnique({
+    where: {
+      id: orderId,
+    },
+    select: {
+      id: true,
+      reference: true,
+      status: true,
+      deliveries: {
+        orderBy: {
+          createdAt: "asc",
+        },
+        select: {
+          id: true,
+          courseId: true,
+          paymentId: true,
+          recipientEmail: true,
+          type: true,
+          status: true,
+          attempts: true,
+          lastAttemptAt: true,
+          sentAt: true,
+          providerMessageId: true,
+          createdAt: true,
+          updatedAt: true,
+          course: {
+            select: {
+              title: true,
             },
           },
         },
       },
-    });
-
+    },
+  });
   if (!order) {
     throw new CourseDeliveryError(
       "ORDER_NOT_FOUND",
@@ -1715,61 +1026,24 @@ export async function getOrderDeliveryStatus(
       404,
     );
   }
-
   return {
-    orderId:
-      order.id,
-
-    orderReference:
-      order.reference,
-
-    orderStatus:
-      order.status,
-
-    deliveries:
-      order.deliveries.map(
-        (delivery) => ({
-          id:
-            delivery.id,
-
-          courseId:
-            delivery.courseId,
-
-          courseTitle:
-            delivery.course.title,
-
-          paymentId:
-            delivery.paymentId,
-
-          recipientEmail:
-            delivery.recipientEmail,
-
-          type:
-            delivery.type,
-
-          status:
-            delivery.status,
-
-          attempts:
-            delivery.attempts,
-
-          lastAttemptAt:
-            delivery.lastAttemptAt,
-
-          sentAt:
-            delivery.sentAt,
-
-          providerMessageId:
-            delivery.providerMessageId,
-
-          createdAt:
-            delivery.createdAt,
-
-          updatedAt:
-            delivery.updatedAt,
-        }),
-      ),
+    orderId: order.id,
+    orderReference: order.reference,
+    orderStatus: order.status,
+    deliveries: order.deliveries.map((delivery) => ({
+      id: delivery.id,
+      courseId: delivery.courseId,
+      courseTitle: delivery.course.title,
+      paymentId: delivery.paymentId,
+      recipientEmail: delivery.recipientEmail,
+      type: delivery.type,
+      status: delivery.status,
+      attempts: delivery.attempts,
+      lastAttemptAt: delivery.lastAttemptAt,
+      sentAt: delivery.sentAt,
+      providerMessageId: delivery.providerMessageId,
+      createdAt: delivery.createdAt,
+      updatedAt: delivery.updatedAt,
+    })),
   };
 }
-
-
